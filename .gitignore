@@ -8,3 +8,9 @@ Thumbs.db
 # Logs / temp
 *.log
 *.tmp
+
+# Secrets (clés API, etc.) — ne jamais versionner
+.env
+.env.*
+*secret*
+*.key
