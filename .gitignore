@@ -1,0 +1,10 @@
+# OS
+Thumbs.db
+.DS_Store
+
+# Claude Code local overrides (personal, never shared)
+.claude/settings.local.json
+
+# Logs / temp
+*.log
+*.tmp
