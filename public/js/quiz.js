@@ -213,7 +213,7 @@ async function onOpenAnswer() {
 
   try {
     const result = await callClaudeJSON(
-      state.apiKey,
+      state.accessCode,
       gradingPrompt(state.profile.niveau, currentQuiz.subject, lesson, q, reponse),
       { maxTokens: 400 }
     );

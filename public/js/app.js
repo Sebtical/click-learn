@@ -3,7 +3,7 @@ let state = loadState();
 const app = document.getElementById('app');
 
 function render() {
-  if (!state.apiKey || !state.profile.prenom) {
+  if (!state.accessCode || !state.profile.prenom) {
     renderSetup();
   } else {
     renderHome();
@@ -29,8 +29,8 @@ function renderSetup() {
           </select>
         </label>
         <label>
-          Clé API Anthropic
-          <input type="password" id="apiKey" required placeholder="sk-ant-..." value="${state.apiKey}">
+          Code d'accès
+          <input type="password" id="accessCode" required placeholder="Code donné par un parent" value="${state.accessCode}">
         </label>
         <button type="submit">Commencer</button>
       </form>
@@ -45,7 +45,7 @@ async function onSetupSubmit(e) {
   e.preventDefault();
   const prenom = document.getElementById('prenom').value.trim();
   const niveau = document.getElementById('niveau').value;
-  const apiKey = document.getElementById('apiKey').value.trim();
+  const accessCode = document.getElementById('accessCode').value.trim();
   const errorEl = document.getElementById('setup-error');
   const submitBtn = e.target.querySelector('button');
 
@@ -54,14 +54,14 @@ async function onSetupSubmit(e) {
   submitBtn.textContent = 'Vérification...';
 
   try {
-    await callClaude(apiKey, [{ role: 'user', content: 'Réponds juste "ok"' }], { maxTokens: 10 });
+    await callClaude(accessCode, [{ role: 'user', content: 'Réponds juste "ok"' }], { maxTokens: 10 });
     state.profile.prenom = prenom;
     state.profile.niveau = niveau;
-    state.apiKey = apiKey;
+    state.accessCode = accessCode;
     saveState(state);
     render();
   } catch (err) {
-    errorEl.textContent = `La clé API ne fonctionne pas : ${err.message}`;
+    errorEl.textContent = `Le code d'accès ne fonctionne pas : ${err.message}`;
     submitBtn.disabled = false;
     submitBtn.textContent = 'Commencer';
   }
@@ -168,7 +168,7 @@ async function onGenerateProgramQuiz(subject, difficultyId, difficultyLabel, btn
 
   try {
     const parsed = await callClaudeJSON(
-      state.apiKey,
+      state.accessCode,
       programQuizPrompt(state.profile.niveau, subject, difficultyId, dateStr),
       { system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 5000 }
     );
@@ -209,7 +209,7 @@ async function renderSubjectProgram(subject) {
     try {
       const dateStr = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
       const parsed = await callClaudeJSON(
-        state.apiKey,
+        state.accessCode,
         curriculumPrompt(state.profile.niveau, subject, dateStr),
         { system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 3000 }
       );
@@ -285,7 +285,7 @@ async function onGenerateChapterQuiz(subject, chapter, difficultyId, difficultyL
 
   try {
     const parsed = await callClaudeJSON(
-      state.apiKey,
+      state.accessCode,
       quizGenerationPrompt(state.profile.niveau, subject, difficultyId, chapter),
       { system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 5000 }
     );
@@ -456,7 +456,7 @@ async function onAnalyzeLesson() {
       { type: 'text', text: 'Voici la photo du cours.' },
       imageContentBlock(base64, mediaType)
     ];
-    const extracted = await callClaudeJSON(state.apiKey, content, {
+    const extracted = await callClaudeJSON(state.accessCode, content, {
       system: lessonAnalysisPrompt(state.profile.niveau, state.subjects)
     });
     renderLessonPreview(extracted, dataUrl);
@@ -562,7 +562,7 @@ async function onGenerateQuiz(lesson, difficultyId, difficultyLabel, btn) {
 
   try {
     const parsed = await callClaudeJSON(
-      state.apiKey,
+      state.accessCode,
       quizGenerationPrompt(state.profile.niveau, lesson.matiere, difficultyId, lesson),
       { system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 5000 }
     );
@@ -627,7 +627,7 @@ async function onAnalyzeExercise() {
       { type: 'text', text: "Voici la photo de l'exercice déjà réalisé." },
       imageContentBlock(base64, mediaType)
     ];
-    const result = await callClaudeJSON(state.apiKey, content, {
+    const result = await callClaudeJSON(state.accessCode, content, {
       system: exerciseGradingPrompt(state.profile.niveau, state.subjects),
       maxTokens: 3000
     });

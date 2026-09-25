@@ -1,15 +1,15 @@
 const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
-const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
+const PROXY_URL = '/api/claude';
 
 // messages: [{ role: 'user', content: '...' | [{type:'text',...}, {type:'image',...}] }]
-async function callClaude(apiKey, messages, { maxTokens = 1024, system = undefined } = {}) {
-  const response = await fetch(ANTHROPIC_URL, {
+// accessCode : pas la clé API — juste le code d'accès à l'app, vérifié par le Worker
+// (worker.js, à la racine), qui seul connaît la vraie clé API (secret côté serveur).
+async function callClaude(accessCode, messages, { maxTokens = 1024, system = undefined } = {}) {
+  const response = await fetch(PROXY_URL, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
+      'x-access-code': accessCode
     },
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
@@ -30,8 +30,8 @@ async function callClaude(apiKey, messages, { maxTokens = 1024, system = undefin
 }
 
 // Envoie un prompt qui doit renvoyer du JSON, et parse la réponse (en tolérant les ```json ... ``` autour).
-async function callClaudeJSON(apiKey, content, { maxTokens = 1500, system } = {}) {
-  const text = await callClaude(apiKey, [{ role: 'user', content }], { maxTokens, system });
+async function callClaudeJSON(accessCode, content, { maxTokens = 1500, system } = {}) {
+  const text = await callClaude(accessCode, [{ role: 'user', content }], { maxTokens, system });
   const cleaned = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
   return JSON.parse(cleaned);
 }

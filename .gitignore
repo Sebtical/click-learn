@@ -14,3 +14,9 @@ Thumbs.db
 .env.*
 *secret*
 *.key
+
+# Secrets locaux pour `wrangler dev` (Cloudflare Worker)
+.dev.vars
+
+# Cache local de wrangler
+.wrangler/
