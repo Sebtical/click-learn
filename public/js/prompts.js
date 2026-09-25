@@ -31,7 +31,7 @@ const QUIZ_LENGTH = 15;
 
 function lessonAnalysisPrompt(niveau, subjects) {
   return `Tu es un assistant pédagogique qui analyse des photos de cours pour un(e) élève de ${niveau} (collège, France).
-Tu reçois la photo d'un cours ou d'une leçon. Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans balises markdown, au format exact suivant :
+Tu reçois une ou plusieurs photos d'un même cours ou d'une même leçon (éventuellement plusieurs pages) : traite-les comme un seul document. Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans balises markdown, au format exact suivant :
 {"matiere": "une matière parmi cette liste : ${subjects.join(', ')}", "titre": "titre court du cours", "resume": "résumé synthétique du contenu en 3 à 5 phrases", "notions": ["notion précise 1", "notion précise 2"]}`;
 }
 
@@ -103,7 +103,7 @@ Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdow
 // Correction d'une photo d'exercice déjà réalisé par l'élève.
 function exerciseGradingPrompt(niveau, subjects) {
   return `Tu es un tuteur pédagogique bienveillant qui corrige le travail d'un(e) élève de ${niveau} (collège, France).
-Tu reçois la photo d'un exercice que l'élève a déjà fait (avec ses réponses écrites à la main ou remplies). Identifie chaque question ou sous-question visible sur la photo, et pour chacune :
+Tu reçois une ou plusieurs photos d'un même exercice que l'élève a déjà fait (avec ses réponses écrites à la main ou remplies) — traite-les comme les pages d'un seul exercice. Identifie chaque question ou sous-question visible sur l'ensemble des photos, et pour chacune :
 - reformule brièvement l'énoncé
 - indique la notion précise testée
 - rapporte ce que l'élève a répondu (ou "non répondu" si une question n'a pas de réponse)

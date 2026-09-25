@@ -2,6 +2,8 @@ let currentQuiz = null;
 let currentQuestionIndex = 0;
 let sessionResults = [];
 let questionRecorded = false;
+let attemptCount = 0;
+const MAX_ATTEMPTS = 2;
 
 function startQuiz(quiz) {
   currentQuiz = quiz;
@@ -12,6 +14,7 @@ function startQuiz(quiz) {
 
 function renderQuizQuestion() {
   questionRecorded = false;
+  attemptCount = 0;
   const q = currentQuiz.questions[currentQuestionIndex];
   const progress = `Question ${currentQuestionIndex + 1}/${currentQuiz.questions.length}`;
   const figHtml = q.fig ? `<div class="fig">${q.fig}</div>` : '';
@@ -112,6 +115,13 @@ function showRetryHint(pisteReflexion) {
     `<p class="hint">Pas tout à fait... 🤔<br>${pisteReflexion}</p><p class="subtitle">Réessaie !</p>`;
 }
 
+function showAnswerReveal(correctText, pisteReflexion) {
+  const feedback = document.getElementById('feedback');
+  feedback.innerHTML =
+    `<p class="hint">Pas tout à fait... 🤔<br>${pisteReflexion}</p><p class="hint">La bonne réponse était : <strong>${correctText}</strong></p><button id="next-q">Suivant</button>`;
+  document.getElementById('next-q').addEventListener('click', nextQuestion);
+}
+
 function showSuccessAndNext() {
   const feedback = document.getElementById('feedback');
   feedback.innerHTML = `<p class="ok">Bravo, bonne réponse ! 🎉</p><button id="next-q">Suivant</button>`;
@@ -131,9 +141,15 @@ function onQcmAnswer(e) {
     e.target.classList.add('correct');
     showSuccessAndNext();
   } else {
+    attemptCount++;
     e.target.classList.add('incorrect');
     e.target.disabled = true;
-    showRetryHint(q.pisteReflexion);
+    if (attemptCount >= MAX_ATTEMPTS) {
+      document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
+      showAnswerReveal(q.choix[q.correctIndex], q.pisteReflexion);
+    } else {
+      showRetryHint(q.pisteReflexion);
+    }
   }
 }
 
@@ -153,7 +169,15 @@ function onMultiAnswer() {
     document.getElementById('submit-multi').remove();
     showSuccessAndNext();
   } else {
-    showRetryHint(q.pisteReflexion);
+    attemptCount++;
+    if (attemptCount >= MAX_ATTEMPTS) {
+      document.querySelectorAll('#choices input').forEach(el => el.disabled = true);
+      document.getElementById('submit-multi').remove();
+      const correctText = q.correctIndexes.map(i => q.choix[i]).join(', ');
+      showAnswerReveal(correctText, q.pisteReflexion);
+    } else {
+      showRetryHint(q.pisteReflexion);
+    }
   }
 }
 
@@ -173,8 +197,15 @@ function onNumAnswer() {
     document.getElementById('submit-num').remove();
     showSuccessAndNext();
   } else {
-    showRetryHint(q.pisteReflexion);
-    input.select();
+    attemptCount++;
+    if (attemptCount >= MAX_ATTEMPTS) {
+      input.disabled = true;
+      document.getElementById('submit-num').remove();
+      showAnswerReveal(fmtNum(q.answer) + (q.unit ? ` ${q.unit}` : ''), q.pisteReflexion);
+    } else {
+      showRetryHint(q.pisteReflexion);
+      input.select();
+    }
   }
 }
 
@@ -194,8 +225,15 @@ function onCourtAnswer() {
     document.getElementById('submit-court').remove();
     showSuccessAndNext();
   } else {
-    showRetryHint(q.pisteReflexion);
-    input.select();
+    attemptCount++;
+    if (attemptCount >= MAX_ATTEMPTS) {
+      input.disabled = true;
+      document.getElementById('submit-court').remove();
+      showAnswerReveal(q.reponses[q.reponses.length - 1], q.pisteReflexion);
+    } else {
+      showRetryHint(q.pisteReflexion);
+      input.select();
+    }
   }
 }
 

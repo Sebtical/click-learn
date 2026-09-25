@@ -22,7 +22,18 @@ function fmtNum(x) {
 function normalizeText(s) {
   return s.toString().trim().toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/\s+/g, ' ');
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\/\s*/g, '/'); // "19 / 15" et "19/15" doivent être équivalents (réponses en fraction)
+}
+
+// Formes acceptées pour une réponse en fraction : la fraction telle quelle, et sa forme simplifiée
+// (ou l'entier si elle se simplifie en nombre entier) — utilisé avec courtQ.
+function fracAnswers(num, den) {
+  const g = gcd(num, den);
+  const sNum = num / g, sDen = den / g;
+  const forms = new Set([`${num}/${den}`]);
+  forms.add(sDen === 1 ? `${sNum}` : `${sNum}/${sDen}`);
+  return [...forms];
 }
 
 // Questions QCM : même format que celui déjà utilisé par les quiz générés par l'IA

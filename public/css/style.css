@@ -201,6 +201,20 @@ input[type="file"] {
   display: block;
 }
 
+.thumb-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.thumb-row .thumb {
+  max-width: 140px;
+  max-height: 140px;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
 .tag {
   display: inline-block;
   background: var(--soft);

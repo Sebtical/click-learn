@@ -144,9 +144,10 @@ const G_MATHS = {
     hard => {
       const d = pick(hard ? [8, 10, 20] : [2, 4, 5, 10]);
       const n1 = ri(1, d - 1), n2 = ri(1, d - n1);
-      const result = (n1 + n2) / d;
-      return numQ('fractions : addition', `Calcule et donne le résultat sous forme décimale : ${n1}/${d} + ${n2}/${d}`, result,
-        `On additionne les numérateurs car le dénominateur est le même : (${n1}+${n2})/${d}. Ensuite, transforme cette fraction en écriture décimale.`);
+      return courtQ('fractions : addition',
+        `Calcule et donne le résultat sous forme de fraction : ${n1}/${d} + ${n2}/${d}`,
+        fracAnswers(n1 + n2, d),
+        `On additionne les numérateurs car le dénominateur est le même : (${n1}+${n2})/${d}. N'oublie pas de simplifier si c'est possible.`);
     },
     hard => {
       const pool = hard ? [3, 4, 5, 6, 7, 8] : [2, 3, 4, 5];
@@ -155,11 +156,12 @@ const G_MATHS = {
       while (d2 === d1) d2 = pick(pool);
       const n1 = ri(1, d1 - 1);
       const n2 = ri(1, d2 - 1);
-      const result = n1 / d1 + n2 / d2;
       const commun = (d1 * d2) / gcd(d1, d2);
-      return numQ('fractions : addition (dénominateurs différents)',
-        `Calcule et donne le résultat sous forme décimale : ${n1}/${d1} + ${n2}/${d2}`, result,
-        `Mets d'abord les deux fractions au même dénominateur (tu peux utiliser ${commun}) en multipliant numérateur ET dénominateur de chaque fraction par le même nombre, puis additionne les numérateurs. Termine en écriture décimale.`);
+      const numCommun = n1 * (commun / d1) + n2 * (commun / d2);
+      return courtQ('fractions : addition (dénominateurs différents)',
+        `Calcule et donne le résultat sous forme de fraction : ${n1}/${d1} + ${n2}/${d2}`,
+        fracAnswers(numCommun, commun),
+        `Mets d'abord les deux fractions au même dénominateur (tu peux utiliser ${commun}) en multipliant numérateur ET dénominateur de chaque fraction par le même nombre, puis additionne les numérateurs. N'oublie pas de simplifier si c'est possible.`);
     },
     hard => {
       const d = pick([2, 3, 4, 5, 10]);

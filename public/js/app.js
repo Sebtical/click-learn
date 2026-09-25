@@ -414,16 +414,23 @@ function startLocalQuiz(subject, themeId, difficultyId) {
   startQuiz(quiz);
 }
 
-let selectedLessonFile = null;
+let selectedLessonFiles = [];
+let lessonPreviewUrls = [];
+
+function revokePreviewUrls(urls) {
+  urls.forEach(u => URL.revokeObjectURL(u));
+}
 
 function renderCaptureLesson() {
-  selectedLessonFile = null;
+  selectedLessonFiles = [];
+  revokePreviewUrls(lessonPreviewUrls);
+  lessonPreviewUrls = [];
   app.innerHTML = `
     <div class="card card-wide">
       <h1>Photographier un cours</h1>
-      <p>Prends en photo une page de cours ou de leçon.</p>
-      <input type="file" accept="image/*" capture="environment" id="lesson-photo">
-      <div id="preview"></div>
+      <p>Prends en photo une ou plusieurs pages de cours ou de leçon.</p>
+      <input type="file" accept="image/*" capture="environment" multiple id="lesson-photo">
+      <div id="preview" class="thumb-row"></div>
       <div class="actions">
         <button id="analyze-btn" disabled>Analyser</button>
         <button id="cancel-btn" class="secondary">Annuler</button>
@@ -433,14 +440,19 @@ function renderCaptureLesson() {
   `;
 
   document.getElementById('lesson-photo').addEventListener('change', (e) => {
-    selectedLessonFile = e.target.files[0] || null;
-    document.getElementById('analyze-btn').disabled = !selectedLessonFile;
-    document.getElementById('preview').innerHTML = selectedLessonFile
-      ? `<img class="thumb" src="${URL.createObjectURL(selectedLessonFile)}">`
-      : '';
+    revokePreviewUrls(lessonPreviewUrls);
+    selectedLessonFiles = Array.from(e.target.files || []);
+    lessonPreviewUrls = selectedLessonFiles.map(f => URL.createObjectURL(f));
+    document.getElementById('analyze-btn').disabled = selectedLessonFiles.length === 0;
+    document.getElementById('preview').innerHTML = lessonPreviewUrls
+      .map(u => `<img class="thumb" src="${u}">`).join('');
   });
   document.getElementById('analyze-btn').addEventListener('click', onAnalyzeLesson);
-  document.getElementById('cancel-btn').addEventListener('click', renderHome);
+  document.getElementById('cancel-btn').addEventListener('click', () => {
+    revokePreviewUrls(lessonPreviewUrls);
+    lessonPreviewUrls = [];
+    renderHome();
+  });
 }
 
 async function onAnalyzeLesson() {
@@ -451,15 +463,17 @@ async function onAnalyzeLesson() {
   analyzeBtn.textContent = 'Analyse en cours...';
 
   try {
-    const { base64, mediaType, dataUrl } = await resizeImageToBase64(selectedLessonFile);
+    const images = await Promise.all(selectedLessonFiles.map(f => resizeImageToBase64(f)));
+    revokePreviewUrls(lessonPreviewUrls);
+    lessonPreviewUrls = [];
     const content = [
-      { type: 'text', text: 'Voici la photo du cours.' },
-      imageContentBlock(base64, mediaType)
+      { type: 'text', text: images.length > 1 ? 'Voici les photos du cours (plusieurs pages).' : 'Voici la photo du cours.' },
+      ...images.map(img => imageContentBlock(img.base64, img.mediaType))
     ];
     const extracted = await callClaudeJSON(state.accessCode, content, {
       system: lessonAnalysisPrompt(state.profile.niveau, state.subjects)
     });
-    renderLessonPreview(extracted, dataUrl);
+    renderLessonPreview(extracted, images.map(img => img.dataUrl));
   } catch (err) {
     errorEl.textContent = `Erreur d'analyse : ${err.message}`;
     analyzeBtn.disabled = false;
@@ -467,11 +481,11 @@ async function onAnalyzeLesson() {
   }
 }
 
-function renderLessonPreview(extracted, imageDataUrl) {
+function renderLessonPreview(extracted, imageDataUrls) {
   app.innerHTML = `
     <div class="card card-wide">
       <h1>Vérifie les infos</h1>
-      <img class="thumb" src="${imageDataUrl}">
+      <div class="thumb-row">${imageDataUrls.map(u => `<img class="thumb" src="${u}">`).join('')}</div>
       <label>
         Matière
         <select id="matiere">
@@ -585,16 +599,19 @@ async function onGenerateQuiz(lesson, difficultyId, difficultyLabel, btn) {
   }
 }
 
-let selectedExerciseFile = null;
+let selectedExerciseFiles = [];
+let exercisePreviewUrls = [];
 
 function renderExerciseCapture() {
-  selectedExerciseFile = null;
+  selectedExerciseFiles = [];
+  revokePreviewUrls(exercisePreviewUrls);
+  exercisePreviewUrls = [];
   app.innerHTML = `
     <div class="card card-wide">
       <h1>Corriger un exercice</h1>
-      <p>Prends en photo un exercice que tu as déjà fait (avec tes réponses écrites).</p>
-      <input type="file" accept="image/*" capture="environment" id="exercise-photo">
-      <div id="preview"></div>
+      <p>Prends en photo un exercice que tu as déjà fait (avec tes réponses écrites) — plusieurs pages possibles.</p>
+      <input type="file" accept="image/*" capture="environment" multiple id="exercise-photo">
+      <div id="preview" class="thumb-row"></div>
       <div class="actions">
         <button id="analyze-btn" disabled>Corriger</button>
         <button id="cancel-btn" class="secondary">Annuler</button>
@@ -604,14 +621,19 @@ function renderExerciseCapture() {
   `;
 
   document.getElementById('exercise-photo').addEventListener('change', (e) => {
-    selectedExerciseFile = e.target.files[0] || null;
-    document.getElementById('analyze-btn').disabled = !selectedExerciseFile;
-    document.getElementById('preview').innerHTML = selectedExerciseFile
-      ? `<img class="thumb" src="${URL.createObjectURL(selectedExerciseFile)}">`
-      : '';
+    revokePreviewUrls(exercisePreviewUrls);
+    selectedExerciseFiles = Array.from(e.target.files || []);
+    exercisePreviewUrls = selectedExerciseFiles.map(f => URL.createObjectURL(f));
+    document.getElementById('analyze-btn').disabled = selectedExerciseFiles.length === 0;
+    document.getElementById('preview').innerHTML = exercisePreviewUrls
+      .map(u => `<img class="thumb" src="${u}">`).join('');
   });
   document.getElementById('analyze-btn').addEventListener('click', onAnalyzeExercise);
-  document.getElementById('cancel-btn').addEventListener('click', renderHome);
+  document.getElementById('cancel-btn').addEventListener('click', () => {
+    revokePreviewUrls(exercisePreviewUrls);
+    exercisePreviewUrls = [];
+    renderHome();
+  });
 }
 
 async function onAnalyzeExercise() {
@@ -622,16 +644,18 @@ async function onAnalyzeExercise() {
   analyzeBtn.textContent = 'Correction en cours...';
 
   try {
-    const { base64, mediaType, dataUrl } = await resizeImageToBase64(selectedExerciseFile);
+    const images = await Promise.all(selectedExerciseFiles.map(f => resizeImageToBase64(f)));
+    revokePreviewUrls(exercisePreviewUrls);
+    exercisePreviewUrls = [];
     const content = [
-      { type: 'text', text: "Voici la photo de l'exercice déjà réalisé." },
-      imageContentBlock(base64, mediaType)
+      { type: 'text', text: images.length > 1 ? "Voici les photos de l'exercice déjà réalisé (plusieurs pages)." : "Voici la photo de l'exercice déjà réalisé." },
+      ...images.map(img => imageContentBlock(img.base64, img.mediaType))
     ];
     const result = await callClaudeJSON(state.accessCode, content, {
       system: exerciseGradingPrompt(state.profile.niveau, state.subjects),
       maxTokens: 3000
     });
-    renderExerciseResult(result, dataUrl);
+    renderExerciseResult(result, images.map(img => img.dataUrl));
   } catch (err) {
     errorEl.textContent = `Erreur de correction : ${err.message}`;
     analyzeBtn.disabled = false;
@@ -639,7 +663,7 @@ async function onAnalyzeExercise() {
   }
 }
 
-function renderExerciseResult(result, imageDataUrl) {
+function renderExerciseResult(result, imageDataUrls) {
   const sessionId = uid();
   const now = new Date().toISOString();
 
@@ -675,7 +699,7 @@ function renderExerciseResult(result, imageDataUrl) {
           <p class="tag">${result.matiere}</p>
         </div>
       </div>
-      <img class="thumb" src="${imageDataUrl}">
+      <div class="thumb-row">${imageDataUrls.map(u => `<img class="thumb" src="${u}">`).join('')}</div>
       <ul class="exercise-list">${items}</ul>
       <button id="back-home">Retour à l'accueil</button>
     </div>
