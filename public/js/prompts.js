@@ -26,8 +26,31 @@ function calibrationNote(niveau) {
   return `Formule des énoncés simples, concrets et clairs, vraiment adaptés à un(e) élève de ${niveau} (collège, France) — évite le vocabulaire universitaire ou les tournures alambiquées, et ne complique jamais une question artificiellement pour la rendre "plus dure".`;
 }
 
+// Un calcul faux dans la clé "answer"/"correctIndex" pénalise injustement l'élève (il peut avoir
+// raison et se voir répondre "faux") : on demande explicitement une relecture avant de finaliser.
+const ACCURACY_NOTE = 'Avant de finaliser, pour chaque question recalcule le résultat attendu pas à pas (étape par étape, sans sauter d\'étape mentalement) et vérifie que "answer" (ou "correctIndex") correspond exactement à ce résultat recalculé. Une bonne réponse de l\'élève marquée "fausse" à cause d\'une erreur de calcul de ta part est pire qu\'une question trop facile.';
+
+// Même logique côté correction : si l'élève a raison, il ne doit jamais être marqué "faux"
+// parce que l'IA a refait le calcul de travers en jugeant sa réponse.
+const GRADING_ACCURACY_NOTE = 'Si la question implique un calcul ou un raisonnement, refais-le toi-même pas à pas avant de juger — ne te fie pas à une impression, une réponse juste de l\'élève ne doit jamais être marquée incorrecte par erreur de calcul de ta part.';
+
 // La répétition d'exercices est ce qui fait progresser : des sets plus longs qu'un simple mini-quiz.
 const QUIZ_LENGTH = 15;
+
+// Bloc commun aux deux prompts qui génèrent un jeu de questions (quizGenerationPrompt et
+// programQuizPrompt) : mélange de types, rappel anti-erreur, et format JSON attendu.
+function questionSetInstructions() {
+  return `Mélange des questions à choix multiples (QCM, 4 choix), des questions à réponse numérique quand c'est adapté (calcul, mesure...), et des questions ouvertes courtes pour le reste. Varie les questions même sur une même notion (angles d'attaque différents, exemples différents) pour un vrai entraînement par répétition, sans répéter deux fois la même question. Pour chaque question, précise la notion exacte testée (ex : "fractions : addition de fractions").
+Pour les QCM : donne l'index (0 à 3) de la bonne réponse, et une piste de réflexion à afficher si l'élève se trompe. Cette piste ne doit JAMAIS révéler la réponse : elle doit rappeler une règle, poser une question, ou suggérer une méthode pour que l'élève trouve seul(e).
+${ACCURACY_NOTE}
+Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown, au format :
+{"questions": [
+  {"type": "qcm", "notion": "...", "enonce": "...", "choix": ["...", "...", "...", "..."], "correctIndex": 0, "pisteReflexion": "..."},
+  {"type": "num", "notion": "...", "enonce": "...", "answer": 0, "unit": "", "pisteReflexion": "..."},
+  {"type": "ouverte", "notion": "...", "enonce": "..."}
+]}
+(le tableau "questions" doit contenir exactement ${QUIZ_LENGTH} éléments, ni plus ni moins)`;
+}
 
 function lessonAnalysisPrompt(niveau, subjects) {
   return `Tu es un assistant pédagogique qui analyse des photos de cours pour un(e) élève de ${niveau} (collège, France).
@@ -45,14 +68,7 @@ Notions : ${lesson.notions.join(', ')}
 
 Génère un parcours de révision de ${QUIZ_LENGTH} questions, niveau de difficulté "${label}" : ${guidance}
 ${calibrationNote(niveau)}
-Mélange des questions à choix multiples (QCM, 4 choix) et des questions ouvertes courtes. Varie les questions même sur une même notion (angles d'attaque différents, exemples différents) pour un vrai entraînement par répétition, sans répéter deux fois la même question. Pour chaque question, précise la notion exacte testée (ex : "fractions : addition de fractions").
-Pour les QCM : donne l'index (0 à 3) de la bonne réponse, et une piste de réflexion à afficher si l'élève se trompe. Cette piste ne doit JAMAIS révéler la réponse : elle doit rappeler une règle, poser une question, ou suggérer une méthode pour que l'élève trouve seul(e).
-Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown, au format :
-{"questions": [
-  {"type": "qcm", "notion": "...", "enonce": "...", "choix": ["...", "...", "...", "..."], "correctIndex": 0, "pisteReflexion": "..."},
-  {"type": "ouverte", "notion": "...", "enonce": "..."}
-]}
-(le tableau "questions" doit contenir ${QUIZ_LENGTH} éléments)`;
+${questionSetInstructions()}`;
 }
 
 function gradingPrompt(niveau, subject, lesson, question, reponseEleve) {
@@ -65,6 +81,7 @@ ${contexte}
 Question posée : ${question.enonce}
 Réponse de l'élève : ${reponseEleve}
 
+${GRADING_ACCURACY_NOTE}
 Évalue cette réponse. Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown, au format :
 {"statut": "correct" | "partiel" | "incorrect", "feedback": "..."}
 Le feedback doit être bienveillant, adapté à un(e) ado. Si le statut n'est pas "correct", le feedback doit être une piste de réflexion qui aide à comprendre l'erreur SANS JAMAIS donner la réponse correcte.`;
@@ -78,14 +95,7 @@ Nous sommes le ${dateStr}.
 
 Génère un parcours de révision de ${QUIZ_LENGTH} questions basé sur le programme officiel de l'Éducation nationale française pour ce niveau et cette matière, en te calant sur les notions généralement abordées à cette période de l'année scolaire (l'année scolaire va de septembre à juillet). Niveau de difficulté "${label}" : ${guidance}
 ${calibrationNote(niveau)}
-Mélange des questions à choix multiples (QCM, 4 choix) et des questions ouvertes courtes. Varie les questions même sur une même notion (angles d'attaque différents, exemples différents) pour un vrai entraînement par répétition, sans répéter deux fois la même question. Pour chaque question, précise la notion exacte testée.
-Pour les QCM : donne l'index (0 à 3) de la bonne réponse, et une piste de réflexion à afficher si l'élève se trompe. Cette piste ne doit JAMAIS révéler la réponse : elle doit rappeler une règle, poser une question, ou suggérer une méthode pour que l'élève trouve seul(e).
-Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown, au format :
-{"questions": [
-  {"type": "qcm", "notion": "...", "enonce": "...", "choix": ["...", "...", "...", "..."], "correctIndex": 0, "pisteReflexion": "..."},
-  {"type": "ouverte", "notion": "...", "enonce": "..."}
-]}
-(le tableau "questions" doit contenir ${QUIZ_LENGTH} éléments)`;
+${questionSetInstructions()}`;
 }
 
 // Liste des chapitres du programme officiel pour une matière, à un niveau donné, adaptée à la période de l'année.
@@ -111,6 +121,7 @@ Tu reçois une ou plusieurs photos d'un même exercice que l'élève a déjà fa
 - donne un feedback bienveillant, adapté à un(e) ado
 
 Si le statut n'est pas "correct", le feedback doit être une piste de réflexion qui aide l'élève à comprendre son erreur, SANS JAMAIS donner la réponse correcte. Si l'écriture ou l'énoncé n'est pas lisible pour une question, dis-le dans le feedback plutôt que d'inventer une réponse.
+${GRADING_ACCURACY_NOTE}
 
 Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown, au format :
 {"matiere": "une matière parmi cette liste : ${subjects.join(', ')}", "exercices": [
