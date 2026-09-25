@@ -421,6 +421,39 @@ function revokePreviewUrls(urls) {
   urls.forEach(u => URL.revokeObjectURL(u));
 }
 
+// Affiche les miniatures d'un tableau de photos accumulées, avec un bouton pour en retirer une.
+// (capture="environment" ne renvoie qu'une photo par déclenchement sur mobile — on cumule
+// les captures successives côté app plutôt que de compter sur un multi-select natif.)
+function renderPhotoThumbs(previewElId, onRemove, urls) {
+  document.getElementById(previewElId).innerHTML = urls.map((u, i) => `
+    <div class="thumb-wrap">
+      <img class="thumb" src="${u}">
+      <button type="button" class="thumb-remove" data-i="${i}" aria-label="Retirer cette photo">✕</button>
+    </div>`).join('');
+  document.querySelectorAll(`#${previewElId} .thumb-remove`).forEach(btn => {
+    btn.addEventListener('click', () => onRemove(Number(btn.dataset.i)));
+  });
+}
+
+// Empêche de retirer une photo ou d'en ajouter une autre pendant qu'une analyse est en cours
+// (sinon la photo "retirée" a déjà été envoyée à l'API sans que le résultat en tienne compte).
+function setCaptureControlsDisabled(photoInputId, disabled) {
+  document.getElementById(photoInputId).disabled = disabled;
+  document.querySelectorAll('.thumb-remove').forEach(b => b.disabled = disabled);
+}
+
+// files/urls : les tableaux (selectedLessonFiles/lessonPreviewUrls ou leur équivalent exercice)
+// à tenir synchronisés quand l'élève retire une photo de l'aperçu.
+function updatePhotoPreview(files, urls) {
+  renderPhotoThumbs('preview', (i) => {
+    URL.revokeObjectURL(urls[i]);
+    urls.splice(i, 1);
+    files.splice(i, 1);
+    document.getElementById('analyze-btn').disabled = files.length === 0;
+    updatePhotoPreview(files, urls);
+  }, urls);
+}
+
 function renderCaptureLesson() {
   selectedLessonFiles = [];
   revokePreviewUrls(lessonPreviewUrls);
@@ -428,7 +461,7 @@ function renderCaptureLesson() {
   app.innerHTML = `
     <div class="card card-wide">
       <h1>Photographier un cours</h1>
-      <p>Prends en photo une ou plusieurs pages de cours ou de leçon.</p>
+      <p>Prends une photo, puis retape sur le bouton pour en ajouter d'autres si besoin (une page à la fois).</p>
       <input type="file" accept="image/*" capture="environment" multiple id="lesson-photo">
       <div id="preview" class="thumb-row"></div>
       <div class="actions">
@@ -440,12 +473,13 @@ function renderCaptureLesson() {
   `;
 
   document.getElementById('lesson-photo').addEventListener('change', (e) => {
-    revokePreviewUrls(lessonPreviewUrls);
-    selectedLessonFiles = Array.from(e.target.files || []);
-    lessonPreviewUrls = selectedLessonFiles.map(f => URL.createObjectURL(f));
-    document.getElementById('analyze-btn').disabled = selectedLessonFiles.length === 0;
-    document.getElementById('preview').innerHTML = lessonPreviewUrls
-      .map(u => `<img class="thumb" src="${u}">`).join('');
+    const newFiles = Array.from(e.target.files || []);
+    e.target.value = ''; // permet de reprendre le même input pour la photo suivante
+    if (newFiles.length === 0) return;
+    selectedLessonFiles.push(...newFiles);
+    lessonPreviewUrls.push(...newFiles.map(f => URL.createObjectURL(f)));
+    document.getElementById('analyze-btn').disabled = false;
+    updatePhotoPreview(selectedLessonFiles, lessonPreviewUrls);
   });
   document.getElementById('analyze-btn').addEventListener('click', onAnalyzeLesson);
   document.getElementById('cancel-btn').addEventListener('click', () => {
@@ -461,11 +495,10 @@ async function onAnalyzeLesson() {
   errorEl.textContent = '';
   analyzeBtn.disabled = true;
   analyzeBtn.textContent = 'Analyse en cours...';
+  setCaptureControlsDisabled('lesson-photo', true);
 
   try {
     const images = await Promise.all(selectedLessonFiles.map(f => resizeImageToBase64(f)));
-    revokePreviewUrls(lessonPreviewUrls);
-    lessonPreviewUrls = [];
     const content = [
       { type: 'text', text: images.length > 1 ? 'Voici les photos du cours (plusieurs pages).' : 'Voici la photo du cours.' },
       ...images.map(img => imageContentBlock(img.base64, img.mediaType))
@@ -473,11 +506,16 @@ async function onAnalyzeLesson() {
     const extracted = await callClaudeJSON(state.accessCode, content, {
       system: lessonAnalysisPrompt(state.profile.niveau, state.subjects)
     });
+    // On ne révoque les URLs d'aperçu qu'une fois l'appel réussi : en cas d'erreur, l'écran
+    // de capture reste affiché et doit garder des miniatures valides pour la nouvelle tentative.
+    revokePreviewUrls(lessonPreviewUrls);
+    lessonPreviewUrls = [];
     renderLessonPreview(extracted, images.map(img => img.dataUrl));
   } catch (err) {
     errorEl.textContent = `Erreur d'analyse : ${err.message}`;
     analyzeBtn.disabled = false;
     analyzeBtn.textContent = 'Analyser';
+    setCaptureControlsDisabled('lesson-photo', false);
   }
 }
 
@@ -609,7 +647,7 @@ function renderExerciseCapture() {
   app.innerHTML = `
     <div class="card card-wide">
       <h1>Corriger un exercice</h1>
-      <p>Prends en photo un exercice que tu as déjà fait (avec tes réponses écrites) — plusieurs pages possibles.</p>
+      <p>Prends une photo, puis retape sur le bouton pour en ajouter d'autres si besoin (une page à la fois).</p>
       <input type="file" accept="image/*" capture="environment" multiple id="exercise-photo">
       <div id="preview" class="thumb-row"></div>
       <div class="actions">
@@ -621,12 +659,13 @@ function renderExerciseCapture() {
   `;
 
   document.getElementById('exercise-photo').addEventListener('change', (e) => {
-    revokePreviewUrls(exercisePreviewUrls);
-    selectedExerciseFiles = Array.from(e.target.files || []);
-    exercisePreviewUrls = selectedExerciseFiles.map(f => URL.createObjectURL(f));
-    document.getElementById('analyze-btn').disabled = selectedExerciseFiles.length === 0;
-    document.getElementById('preview').innerHTML = exercisePreviewUrls
-      .map(u => `<img class="thumb" src="${u}">`).join('');
+    const newFiles = Array.from(e.target.files || []);
+    e.target.value = ''; // permet de reprendre le même input pour la photo suivante
+    if (newFiles.length === 0) return;
+    selectedExerciseFiles.push(...newFiles);
+    exercisePreviewUrls.push(...newFiles.map(f => URL.createObjectURL(f)));
+    document.getElementById('analyze-btn').disabled = false;
+    updatePhotoPreview(selectedExerciseFiles, exercisePreviewUrls);
   });
   document.getElementById('analyze-btn').addEventListener('click', onAnalyzeExercise);
   document.getElementById('cancel-btn').addEventListener('click', () => {
@@ -642,11 +681,10 @@ async function onAnalyzeExercise() {
   errorEl.textContent = '';
   analyzeBtn.disabled = true;
   analyzeBtn.textContent = 'Correction en cours...';
+  setCaptureControlsDisabled('exercise-photo', true);
 
   try {
     const images = await Promise.all(selectedExerciseFiles.map(f => resizeImageToBase64(f)));
-    revokePreviewUrls(exercisePreviewUrls);
-    exercisePreviewUrls = [];
     const content = [
       { type: 'text', text: images.length > 1 ? "Voici les photos de l'exercice déjà réalisé (plusieurs pages)." : "Voici la photo de l'exercice déjà réalisé." },
       ...images.map(img => imageContentBlock(img.base64, img.mediaType))
@@ -655,11 +693,16 @@ async function onAnalyzeExercise() {
       system: exerciseGradingPrompt(state.profile.niveau, state.subjects),
       maxTokens: 3000
     });
+    // On ne révoque les URLs d'aperçu qu'une fois l'appel réussi : en cas d'erreur, l'écran
+    // de capture reste affiché et doit garder des miniatures valides pour la nouvelle tentative.
+    revokePreviewUrls(exercisePreviewUrls);
+    exercisePreviewUrls = [];
     renderExerciseResult(result, images.map(img => img.dataUrl));
   } catch (err) {
     errorEl.textContent = `Erreur de correction : ${err.message}`;
     analyzeBtn.disabled = false;
     analyzeBtn.textContent = 'Corriger';
+    setCaptureControlsDisabled('exercise-photo', false);
   }
 }
 
