@@ -5,3 +5,9 @@ compatibility_date = "2025-06-01"
 [assets]
 directory = "./public"
 binding = "ASSETS"
+
+# Base des profils, résultats et défis (créée avec --jurisdiction eu : données stockées dans l'UE).
+[[d1_databases]]
+binding = "DB"
+database_name = "click-learn"
+database_id = "dd253ee3-38d4-4e3c-a052-290ed354ccd1"
