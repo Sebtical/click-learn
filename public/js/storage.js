@@ -9,7 +9,8 @@ const DEFAULT_STATE = {
   attempts: [],
   progress: {},
   curriculum: {},
-  role: null
+  role: null,
+  reprise: null // null = pas encore demandé, 'faite' = accord donné ou refusé (voir sync.js)
 };
 
 function loadState() {

@@ -7,7 +7,16 @@ function render() {
     renderSetup();
   } else {
     renderHome();
-    actualiserRole();
+    actualiserRole().then(apresRole);
+  }
+}
+
+// Une fois le rôle connu : demande l'accord de partage si besoin (depuis l'accueil seulement), sinon synchronise.
+function apresRole() {
+  if (repriseADemander()) {
+    if (document.getElementById('edit-config')) renderConfirmReprise();
+  } else {
+    synchroniser();
   }
 }
 
@@ -81,6 +90,7 @@ async function onSetupSubmit(e) {
     state.role = role;
     saveState(state);
     render();
+    apresRole();
   } catch (err) {
     errorEl.textContent = `Le code d'accès ne fonctionne pas : ${err.message}`;
     submitBtn.disabled = false;
@@ -576,6 +586,7 @@ function renderLessonPreview(extracted, imageDataUrls) {
     };
     state.lessons.push(lesson);
     saveState(state);
+    synchroniser();
     renderLessonDetail(lesson);
   });
   document.getElementById('cancel-btn').addEventListener('click', renderHome);
@@ -741,10 +752,14 @@ function renderExerciseResult(result, imageDataUrls) {
       notion: ex.notion,
       type: 'exercice',
       correct: ex.statut === 'correct',
-      date: now
+      date: now,
+      enonce: ex.enonce,
+      reponseDonnee: ex.reponseEleve,
+      bonneReponse: null
     });
   });
   saveState(state);
+  synchroniser();
 
   const allCorrect = result.exercices.every(ex => ex.statut === 'correct');
 

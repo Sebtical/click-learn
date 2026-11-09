@@ -3,6 +3,8 @@
 
 // ── Imports et réglages ──
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, test } from 'node:test';
 import worker from '../worker.js';
 
@@ -136,6 +138,125 @@ test('un code parent peut aussi utiliser le proxy', async () => {
   const reponse = await appeler({ max_tokens: 10, messages: MESSAGES }, 'code-parent-un');
   assert.equal(reponse.status, 200);
   assert.equal(envois.length, 1);
+});
+
+// ── Synchronisation : base D1 simulée par le SQLite intégré à Node ──
+
+// Fausse base D1 : vraie base SQLite en mémoire, avec la même structure que la production.
+function faireD1() {
+  const db = new DatabaseSync(':memory:');
+  db.exec(readFileSync(new URL('../migrations/0001_init.sql', import.meta.url), 'utf8'));
+  const preparer = (sql, params = []) => ({
+    bind: (...valeurs) => preparer(sql, valeurs),
+    run: async () => { db.prepare(sql).run(...params); return { success: true }; },
+    all: async () => ({ results: db.prepare(sql).all(...params) })
+  });
+  return {
+    prepare: sql => preparer(sql),
+    async batch(instructions) {
+      db.exec('BEGIN');
+      try {
+        for (const instruction of instructions) await instruction.run();
+        db.exec('COMMIT');
+      } catch (e) {
+        db.exec('ROLLBACK');
+        throw e;
+      }
+    },
+    lire: sql => db.prepare(sql).all()
+  };
+}
+
+// Envoie un lot à /api/sync avec le code de l'enfant par défaut.
+function synchroniser(corps, env, code = ENV.ACCESS_CODE, methode = 'POST') {
+  const requete = new Request('https://exemple.test/api/sync', {
+    method: methode,
+    headers: { 'content-type': 'application/json', 'x-access-code': code },
+    ...(methode === 'POST' ? { body: typeof corps === 'string' ? corps : JSON.stringify(corps) } : {})
+  });
+  return worker.fetch(requete, env);
+}
+
+const TENTATIVE = {
+  id: 'id-1', quizId: 'q-1', questionId: 'qq-1', subject: 'Maths', theme: 'fractions',
+  notion: 'Simplifier', type: 'qcm', correct: false, date: '2026-11-10T10:00:00.000Z',
+  enonce: 'Simplifie 6/8', reponseDonnee: '2/3', bonneReponse: '3/4'
+};
+
+test('l\'enfant enregistre ses réponses, toujours au nom de l\'enfant', async () => {
+  const DB = faireD1();
+  const reponse = await synchroniser({ tentatives: [{ ...TENTATIVE, joueur: 'parent1' }] }, { ...ENV, DB });
+  assert.equal(reponse.status, 200);
+  const lignes = DB.lire('SELECT * FROM tentatives');
+  assert.equal(lignes.length, 1);
+  assert.equal(lignes[0].joueur, 'enfant');
+  assert.equal(lignes[0].reponse_donnee, '2/3');
+  assert.equal(lignes[0].correct, 0);
+});
+
+test('renvoyer la même réponse ne crée pas de doublon', async () => {
+  const DB = faireD1();
+  await synchroniser({ tentatives: [TENTATIVE] }, { ...ENV, DB });
+  await synchroniser({ tentatives: [TENTATIVE] }, { ...ENV, DB });
+  assert.equal(DB.lire('SELECT * FROM tentatives').length, 1);
+});
+
+test('un code parent ne peut pas écrire dans les résultats de l\'enfant', async () => {
+  const DB = faireD1();
+  const reponse = await synchroniser({ tentatives: [TENTATIVE] }, { ...ENV, DB }, 'code-parent-un');
+  assert.equal(reponse.status, 403);
+  assert.equal(DB.lire('SELECT * FROM tentatives').length, 0);
+});
+
+test('un code inconnu est refusé par /api/sync', async () => {
+  const DB = faireD1();
+  const reponse = await synchroniser({ tentatives: [TENTATIVE] }, { ...ENV, DB }, 'inconnu');
+  assert.equal(reponse.status, 401);
+  assert.equal(DB.lire('SELECT * FROM tentatives').length, 0);
+});
+
+test('/api/sync refuse une autre méthode que POST', async () => {
+  const reponse = await synchroniser(null, { ...ENV, DB: faireD1() }, ENV.ACCESS_CODE, 'GET');
+  assert.equal(reponse.status, 405);
+});
+
+test('les éléments invalides sont écartés et comptés, les autres enregistrés', async () => {
+  const DB = faireD1();
+  const reponse = await synchroniser({
+    tentatives: [TENTATIVE, { ...TENTATIVE, id: 'id-2', correct: 'oui' }, { ...TENTATIVE, id: '' }, null]
+  }, { ...ENV, DB });
+  assert.deepEqual(await reponse.json(), { recus: 4, ignores: 3 });
+  assert.equal(DB.lire('SELECT * FROM tentatives').length, 1);
+});
+
+test('un lot trop gros est refusé sans rien écrire', async () => {
+  const DB = faireD1();
+  const lot = Array.from({ length: 201 }, (_, i) => ({ ...TENTATIVE, id: `id-${i}` }));
+  const reponse = await synchroniser({ tentatives: lot }, { ...ENV, DB });
+  assert.equal(reponse.status, 400);
+  assert.equal(DB.lire('SELECT * FROM tentatives').length, 0);
+});
+
+test('un corps illisible ou des listes mal formées renvoient 400', async () => {
+  const env = { ...ENV, DB: faireD1() };
+  assert.equal((await synchroniser('pas du json', env)).status, 400);
+  assert.equal((await synchroniser({ tentatives: 'x' }, env)).status, 400);
+});
+
+test('les textes trop longs sont tronqués', async () => {
+  const DB = faireD1();
+  await synchroniser({ tentatives: [{ ...TENTATIVE, enonce: 'a'.repeat(5000) }] }, { ...ENV, DB });
+  assert.equal(DB.lire('SELECT enonce FROM tentatives')[0].enonce.length, 2000);
+});
+
+test('les cours et le profil sont enregistrés, le profil mis à jour', async () => {
+  const DB = faireD1();
+  const cours = { id: 'c-1', matiere: 'SVT', titre: 'La cellule', resume: 'r', notions: ['noyau', 3], date: '2026-11-10' };
+  await synchroniser({ cours: [cours], profil: { prenom: 'Léa', niveau: '5ème' } }, { ...ENV, DB });
+  await synchroniser({ profil: { prenom: 'Léa', niveau: '4ème' } }, { ...ENV, DB });
+  assert.deepEqual(JSON.parse(DB.lire('SELECT notions FROM cours')[0].notions), ['noyau']);
+  const profils = DB.lire('SELECT role, niveau FROM profils');
+  assert.deepEqual(profils.map(p => ({ ...p })), [{ role: 'enfant', niveau: '4ème' }]);
 });
 
 // ── Requêtes invalides : refus avant tout appel payant ──

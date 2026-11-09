@@ -3,11 +3,44 @@
 // il envoie juste le code d'accès (state.accessCode), qu'on vérifie ici avant de relayer
 // vers Anthropic en y ajoutant la clé API — qui elle ne vit que comme secret Cloudflare
 // (env.ANTHROPIC_API_KEY), jamais dans le repo ni servie au client.
+// Il enregistre aussi les résultats de l'enfant dans la base D1 (env.DB) via /api/sync.
 
 // ── Réglages ──
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODELE_ANTHROPIC = 'claude-haiku-4-5-20251001';
 const PLAFOND_MAX_TOKENS = 5000; // appel le plus long de l'appli : 5000 (app.js)
+const TAILLE_MAX_LOT = 200;      // éléments par envoi /api/sync (le navigateur découpe en lots)
+const LONGUEUR_MAX_TEXTE = 2000; // au-delà, un texte est tronqué avant d'entrer en base
+
+// ── Outils ──
+
+// Construit une réponse JSON avec le bon statut HTTP.
+function reponseJson(statut, objet) {
+  return new Response(JSON.stringify(objet), {
+    status: statut,
+    headers: { 'content-type': 'application/json' }
+  });
+}
+
+// Raccourci pour une réponse d'erreur au format attendu par api.js.
+function erreur(statut, message) {
+  return reponseJson(statut, { error: { message } });
+}
+
+// Lit un corps JSON qui doit être un objet ; renvoie null sinon.
+function lireObjetJson(texte) {
+  try {
+    const objet = JSON.parse(texte);
+    return objet !== null && typeof objet === 'object' && !Array.isArray(objet) ? objet : null;
+  } catch {
+    return null;
+  }
+}
+
+// Garde un texte borné, ou null si la valeur n'est pas une chaîne.
+function texteBorne(valeur, max = LONGUEUR_MAX_TEXTE) {
+  return typeof valeur === 'string' ? valeur.slice(0, max) : null;
+}
 
 // ── Contrôles ──
 
@@ -42,16 +75,16 @@ async function roleDepuisCode(code, env) {
   return role;
 }
 
+// Rôle de la requête à partir de son en-tête x-access-code.
+function roleDeLaRequete(request, env) {
+  return roleDepuisCode(request.headers.get('x-access-code') || '', env);
+}
+
 // Reconstruit la demande côté serveur : modèle imposé, longueur plafonnée, champs non prévus écartés.
 // Renvoie null si la demande est invalide, pour la refuser avant tout appel payant.
 function construireCorpsAnthropic(texte) {
-  let demande;
-  try {
-    demande = JSON.parse(texte);
-  } catch {
-    return null;
-  }
-  if (demande === null || typeof demande !== 'object' || Array.isArray(demande)) return null;
+  const demande = lireObjetJson(texte);
+  if (demande === null) return null;
   if (!Number.isInteger(demande.max_tokens) || demande.max_tokens <= 0) return null;
   return {
     model: MODELE_ANTHROPIC,
@@ -64,28 +97,13 @@ function construireCorpsAnthropic(texte) {
 // ── Proxy ──
 // Vérifie le code d'accès puis relaie vers Anthropic une demande bornée par le serveur.
 async function handleClaudeProxy(request, env) {
-  if (request.method !== 'POST') {
-    return new Response(JSON.stringify({ error: { message: 'Méthode non autorisée.' } }), {
-      status: 405,
-      headers: { 'content-type': 'application/json' }
-    });
-  }
+  if (request.method !== 'POST') return erreur(405, 'Méthode non autorisée.');
+  if ((await roleDeLaRequete(request, env)) === null) return erreur(401, 'Code d\'accès invalide.');
 
-  if ((await roleDepuisCode(request.headers.get('x-access-code') || '', env)) === null) {
-    return new Response(JSON.stringify({ error: { message: 'Code d\'accès invalide.' } }), {
-      status: 401,
-      headers: { 'content-type': 'application/json' }
-    });
-  }
-
-  // Le navigateur ne décide ni du modèle ni de la longueur maximale : c'est ce qui borne le coût si le code d'accès fuite
+  // Le navigateur ne décide ni du modèle ni de la longueur maximale : la dépense par appel est bornée
+  // (le nombre d'appels, lui, ne l'est pas : c'est le rôle de la limite de dépenses côté Anthropic).
   const corps = construireCorpsAnthropic(await request.text());
-  if (corps === null) {
-    return new Response(JSON.stringify({ error: { message: 'Requête invalide.' } }), {
-      status: 400,
-      headers: { 'content-type': 'application/json' }
-    });
-  }
+  if (corps === null) return erreur(400, 'Requête invalide.');
 
   const anthropicResponse = await fetch(ANTHROPIC_URL, {
     method: 'POST',
@@ -106,36 +124,98 @@ async function handleClaudeProxy(request, env) {
 // ── Profils ──
 // Indique au navigateur le rôle associé à son code, sans aucun appel payant.
 async function handleMoi(request, env) {
-  if (request.method !== 'GET') {
-    return new Response(JSON.stringify({ error: { message: 'Méthode non autorisée.' } }), {
-      status: 405,
-      headers: { 'content-type': 'application/json' }
-    });
+  if (request.method !== 'GET') return erreur(405, 'Méthode non autorisée.');
+  const role = await roleDeLaRequete(request, env);
+  if (role === null) return erreur(401, 'Code d\'accès invalide.');
+  return reponseJson(200, { role });
+}
+
+// ── Synchronisation ──
+
+// Valide une réponse envoyée par le navigateur ; renvoie les valeurs à insérer, ou null si elle est inutilisable.
+function valeursTentative(t) {
+  if (t === null || typeof t !== 'object') return null;
+  if (typeof t.id !== 'string' || !t.id || t.id.length > 100) return null;
+  if (typeof t.correct !== 'boolean' || typeof t.date !== 'string') return null;
+  return [
+    t.id, texteBorne(t.quizId, 100), texteBorne(t.questionId, 100), texteBorne(t.subject, 100),
+    texteBorne(t.theme, 200), texteBorne(t.notion, 300), texteBorne(t.type, 30),
+    t.correct ? 1 : 0, t.date.slice(0, 40),
+    texteBorne(t.enonce), texteBorne(t.reponseDonnee), texteBorne(t.bonneReponse)
+  ];
+}
+
+// Valide un résumé de cours ; renvoie les valeurs à insérer, ou null s'il est inutilisable.
+function valeursCours(c) {
+  if (c === null || typeof c !== 'object') return null;
+  if (typeof c.id !== 'string' || !c.id || c.id.length > 100 || typeof c.date !== 'string') return null;
+  const notions = Array.isArray(c.notions)
+    ? c.notions.filter(n => typeof n === 'string').map(n => n.slice(0, 300)).slice(0, 50)
+    : [];
+  return [
+    c.id, texteBorne(c.matiere, 100), texteBorne(c.titre, 300), texteBorne(c.resume),
+    JSON.stringify(notions), c.date.slice(0, 40)
+  ];
+}
+
+// Enregistre les réponses, cours et profil de l'enfant. Seul le code enfant peut écrire ici,
+// et le joueur est toujours fixé par le serveur, quoi que le navigateur envoie.
+async function handleSync(request, env) {
+  if (request.method !== 'POST') return erreur(405, 'Méthode non autorisée.');
+  const role = await roleDeLaRequete(request, env);
+  if (role === null) return erreur(401, 'Code d\'accès invalide.');
+  if (role !== 'enfant') return erreur(403, 'Seul le profil enfant partage ses résultats.');
+
+  // Lecture et contrôle de la forme générale de l'envoi
+  const envoi = lireObjetJson(await request.text());
+  if (envoi === null) return erreur(400, 'Requête invalide.');
+  const tentatives = envoi.tentatives ?? [];
+  const cours = envoi.cours ?? [];
+  if (!Array.isArray(tentatives) || !Array.isArray(cours)) return erreur(400, 'Requête invalide.');
+  if (tentatives.length + cours.length > TAILLE_MAX_LOT) return erreur(400, 'Envoi trop volumineux.');
+
+  // Préparation des écritures : les éléments invalides sont écartés et comptés
+  const ecritures = [];
+  let ignores = 0;
+  for (const t of tentatives) {
+    const valeurs = valeursTentative(t);
+    if (valeurs === null) { ignores++; continue; }
+    ecritures.push(env.DB.prepare(
+      `INSERT OR IGNORE INTO tentatives
+        (id, joueur, quiz_id, question_id, matiere, theme, notion, type, correct, date, enonce, reponse_donnee, bonne_reponse)
+       VALUES (?1, ?13, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
+    ).bind(...valeurs, role));
+  }
+  for (const c of cours) {
+    const valeurs = valeursCours(c);
+    if (valeurs === null) { ignores++; continue; }
+    ecritures.push(env.DB.prepare(
+      `INSERT OR IGNORE INTO cours (id, joueur, matiere, titre, resume, notions, date)
+       VALUES (?1, ?7, ?2, ?3, ?4, ?5, ?6)`
+    ).bind(...valeurs, role));
   }
 
-  const role = await roleDepuisCode(request.headers.get('x-access-code') || '', env);
-  if (role === null) {
-    return new Response(JSON.stringify({ error: { message: 'Code d\'accès invalide.' } }), {
-      status: 401,
-      headers: { 'content-type': 'application/json' }
-    });
+  // Profil : prénom et niveau, mis à jour à chaque envoi
+  const profil = envoi.profil;
+  if (profil && typeof profil === 'object') {
+    ecritures.push(env.DB.prepare(
+      `INSERT INTO profils (role, prenom, niveau, maj) VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT (role) DO UPDATE SET prenom = excluded.prenom, niveau = excluded.niveau, maj = excluded.maj`
+    ).bind(role, texteBorne(profil.prenom, 60), texteBorne(profil.niveau, 10), new Date().toISOString()));
   }
-  return new Response(JSON.stringify({ role }), {
-    status: 200,
-    headers: { 'content-type': 'application/json' }
-  });
+
+  // Écriture en une seule transaction : tout ou rien
+  if (ecritures.length) await env.DB.batch(ecritures);
+  return reponseJson(200, { recus: tentatives.length + cours.length, ignores });
 }
 
 // ── Aiguillage ──
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === '/api/moi') {
-      return handleMoi(request, env);
-    }
-    if (url.pathname === '/api/claude') {
-      return handleClaudeProxy(request, env);
-    }
+    if (url.pathname === '/api/moi') return handleMoi(request, env);
+    if (url.pathname === '/api/sync') return handleSync(request, env);
+    if (url.pathname === '/api/claude') return handleClaudeProxy(request, env);
     return env.ASSETS.fetch(request);
   }
 };

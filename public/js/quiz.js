@@ -104,10 +104,11 @@ function renderQuizQuestion() {
   document.getElementById('quit-quiz').addEventListener('click', renderHome);
 }
 
-function recordOnce(question, correct) {
+// Enregistre seulement le premier essai d'une question, avec la réponse donnée à ce moment-là.
+function recordOnce(question, correct, reponseDonnee) {
   if (questionRecorded) return;
   questionRecorded = true;
-  recordAttempt(question, correct);
+  recordAttempt(question, correct, reponseDonnee);
 }
 
 function showRetryHint(pisteReflexion) {
@@ -134,7 +135,7 @@ function onQcmAnswer(e) {
   const q = currentQuiz.questions[currentQuestionIndex];
   const correct = i === q.correctIndex;
 
-  recordOnce(q, correct);
+  recordOnce(q, correct, q.choix[i]);
 
   if (correct) {
     document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
@@ -162,7 +163,7 @@ function onMultiAnswer() {
 
   const correct = JSON.stringify(checked) === JSON.stringify(q.correctIndexes);
 
-  recordOnce(q, correct);
+  recordOnce(q, correct, checked.map(i => q.choix[i]).join(', '));
 
   if (correct) {
     document.querySelectorAll('#choices input').forEach(el => el.disabled = true);
@@ -190,7 +191,7 @@ function onNumAnswer() {
   const userNum = parseFloat(raw);
   const correct = !isNaN(userNum) && Math.abs(userNum - q.answer) < 0.01;
 
-  recordOnce(q, correct);
+  recordOnce(q, correct, input.value.trim());
 
   if (correct) {
     input.disabled = true;
@@ -218,7 +219,7 @@ function onCourtAnswer() {
   const norm = normalizeText(raw);
   const correct = q.reponses.some(r => normalizeText(r) === norm);
 
-  recordOnce(q, correct);
+  recordOnce(q, correct, raw);
 
   if (correct) {
     input.disabled = true;
@@ -267,7 +268,7 @@ async function onOpenAnswer() {
     document.getElementById('next-q').addEventListener('click', nextQuestion);
 
     if (correct) fireConfetti();
-    recordOnce(q, correct);
+    recordOnce(q, correct, reponse);
   } catch (err) {
     btn.disabled = false;
     btn.textContent = 'Valider';
@@ -275,7 +276,8 @@ async function onOpenAnswer() {
   }
 }
 
-function recordAttempt(question, correct) {
+// Ajoute la réponse à l'historique local, avec énoncé et bonne réponse pour l'espace parent, puis la partage.
+function recordAttempt(question, correct, reponseDonnee = null) {
   const attempt = {
     id: uid(),
     quizId: currentQuiz.id,
@@ -285,11 +287,15 @@ function recordAttempt(question, correct) {
     notion: question.notion,
     type: question.type,
     correct,
-    date: new Date().toISOString()
+    date: new Date().toISOString(),
+    enonce: question.enonce,
+    reponseDonnee,
+    bonneReponse: texteBonneReponse(question)
   };
   state.attempts.push(attempt);
   saveState(state);
   sessionResults.push(attempt);
+  synchroniser();
 }
 
 function nextQuestion() {
