@@ -27,6 +27,14 @@ async function callClaude(accessCode, messages, { maxTokens = 1024, system = und
   return data.content.map(block => block.text || '').join('');
 }
 
+// Demande au serveur le rôle lié à ce code (enfant, parent1, parent2) ; lève une erreur si le code est refusé.
+async function demanderRole(accessCode) {
+  const response = await fetch('/api/moi', { headers: { 'x-access-code': accessCode } });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error?.message || `Erreur HTTP ${response.status}`);
+  return data.role;
+}
+
 // Envoie un prompt qui doit renvoyer du JSON, et parse la réponse (en tolérant les ```json ... ``` autour).
 async function callClaudeJSON(accessCode, content, { maxTokens = 1500, system } = {}) {
   const text = await callClaude(accessCode, [{ role: 'user', content }], { maxTokens, system });

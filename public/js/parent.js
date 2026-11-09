@@ -1,44 +1,3 @@
-function renderParentGate() {
-  const hasCode = !!state.parentAuth.code;
-  app.innerHTML = `
-    <div class="card pinbox">
-      <h1>👪 Espace parent</h1>
-      <p class="subtitle">${hasCode ? 'Entre le code à 4 chiffres.' : 'Crée un code à 4 chiffres pour protéger cet espace.'}</p>
-      <form id="pin-form">
-        <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pin-input" placeholder="••••" autofocus>
-        <button type="submit">${hasCode ? 'Valider' : 'Créer'}</button>
-      </form>
-      <p id="pin-error" class="error"></p>
-      <button id="pin-cancel" class="link">Retour</button>
-    </div>
-  `;
-
-  document.getElementById('pin-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const value = document.getElementById('pin-input').value.trim();
-    const errorEl = document.getElementById('pin-error');
-
-    if (!/^\d{4}$/.test(value)) {
-      errorEl.textContent = 'Le code doit contenir exactement 4 chiffres.';
-      return;
-    }
-
-    if (hasCode) {
-      if (value === state.parentAuth.code) {
-        renderParentDashboard();
-      } else {
-        errorEl.textContent = 'Code incorrect.';
-      }
-    } else {
-      state.parentAuth.code = value;
-      saveState(state);
-      renderParentDashboard();
-    }
-  });
-
-  document.getElementById('pin-cancel').addEventListener('click', renderHome);
-}
-
 function computeSubjectAndNotionStats() {
   const bySubject = {};
   const byNotion = {};
@@ -126,15 +85,9 @@ function renderParentDashboard() {
 
       <div class="actions">
         <button id="parent-back">Retour à l'accueil</button>
-        <button id="parent-reset-code" class="secondary">Changer le code</button>
       </div>
     </div>
   `;
 
   document.getElementById('parent-back').addEventListener('click', renderHome);
-  document.getElementById('parent-reset-code').addEventListener('click', () => {
-    state.parentAuth.code = null;
-    saveState(state);
-    renderParentGate();
-  });
 }

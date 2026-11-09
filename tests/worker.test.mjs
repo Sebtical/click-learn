@@ -6,7 +6,12 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import worker from '../worker.js';
 
-const ENV = { ACCESS_CODE: 'code-de-test', ANTHROPIC_API_KEY: 'cle-de-test' };
+const ENV = {
+  ACCESS_CODE: 'code-de-test',
+  PARENT_CODE_1: 'code-parent-un',
+  PARENT_CODE_2: 'code-parent-deux',
+  ANTHROPIC_API_KEY: 'cle-de-test'
+};
 const MODELE_SERVEUR = 'claude-haiku-4-5-20251001';
 const PLAFOND = 5000;
 
@@ -88,6 +93,49 @@ test('system et messages sont transmis intacts', async () => {
   await appeler({ max_tokens: 10, system: 'consigne', messages: MESSAGES });
   assert.equal(envois[0].corps.system, 'consigne');
   assert.deepEqual(envois[0].corps.messages, MESSAGES);
+});
+
+// ── Rôles : le serveur déduit qui parle à partir du code ──
+// Interroge /api/moi avec un code donné.
+function demanderRole(code, env = ENV, methode = 'GET') {
+  const requete = new Request('https://exemple.test/api/moi', {
+    method: methode,
+    headers: { 'x-access-code': code }
+  });
+  return worker.fetch(requete, env);
+}
+
+for (const [code, role] of [
+  ['code-de-test', 'enfant'],
+  ['code-parent-un', 'parent1'],
+  ['code-parent-deux', 'parent2']
+]) {
+  test(`le code ${code} donne le rôle ${role}`, async () => {
+    const reponse = await demanderRole(code);
+    assert.equal(reponse.status, 200);
+    assert.deepEqual(await reponse.json(), { role });
+  });
+}
+
+test('un code inconnu n\'obtient aucun rôle', async () => {
+  const reponse = await demanderRole('inconnu');
+  assert.equal(reponse.status, 401);
+});
+
+test('un code vide n\'obtient aucun rôle quand des codes parents manquent', async () => {
+  const reponse = await demanderRole('', { ACCESS_CODE: 'code-de-test' });
+  assert.equal(reponse.status, 401);
+});
+
+test('/api/moi refuse une autre méthode que GET', async () => {
+  const reponse = await demanderRole('code-de-test', ENV, 'POST');
+  assert.equal(reponse.status, 405);
+});
+
+test('un code parent peut aussi utiliser le proxy', async () => {
+  const reponse = await appeler({ max_tokens: 10, messages: MESSAGES }, 'code-parent-un');
+  assert.equal(reponse.status, 200);
+  assert.equal(envois.length, 1);
 });
 
 // ── Requêtes invalides : refus avant tout appel payant ──

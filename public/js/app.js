@@ -7,6 +7,26 @@ function render() {
     renderSetup();
   } else {
     renderHome();
+    actualiserRole();
+  }
+}
+
+// Vrai si le serveur a reconnu un code parent (sert seulement à l'affichage : le serveur reste seul juge).
+function estParent() {
+  return state.role === 'parent1' || state.role === 'parent2';
+}
+
+// Met à jour le rôle en arrière-plan, pour les appareils déjà configurés avant l'arrivée des profils.
+async function actualiserRole() {
+  try {
+    const role = await demanderRole(state.accessCode);
+    if (role === state.role) return;
+    state.role = role;
+    saveState(state);
+    // On ne redessine que si l'accueil est encore affiché, pour ne pas interrompre un quiz.
+    if (document.getElementById('edit-config')) renderHome();
+  } catch {
+    // Hors ligne ou code refusé : on garde l'affichage actuel, les routes serveur restent protégées.
   }
 }
 
@@ -54,10 +74,11 @@ async function onSetupSubmit(e) {
   submitBtn.textContent = 'Vérification...';
 
   try {
-    await callClaude(accessCode, [{ role: 'user', content: 'Réponds juste "ok"' }], { maxTokens: 10 });
+    const role = await demanderRole(accessCode);
     state.profile.prenom = prenom;
     state.profile.niveau = niveau;
     state.accessCode = accessCode;
+    state.role = role;
     saveState(state);
     render();
   } catch (err) {
@@ -122,9 +143,9 @@ function renderHome() {
       </div>
       <button id="edit-config" class="link">Modifier la configuration</button>
 
-      <div class="foot-parent">
+      ${estParent() ? `<div class="foot-parent">
         <button id="parent-link" class="link">👪 Espace parent</button>
-      </div>
+      </div>` : ''}
     </div>
   `;
 
@@ -134,7 +155,8 @@ function renderHome() {
   document.getElementById('capture-btn').addEventListener('click', renderCaptureLesson);
   document.getElementById('exercise-btn').addEventListener('click', renderExerciseCapture);
   document.getElementById('edit-config').addEventListener('click', renderSetup);
-  document.getElementById('parent-link').addEventListener('click', renderParentGate);
+  const parentLink = document.getElementById('parent-link');
+  if (parentLink) parentLink.addEventListener('click', renderParentDashboard);
   const lessonsBtn = document.getElementById('lessons-btn');
   if (lessonsBtn) lessonsBtn.addEventListener('click', renderLessonsList);
 }

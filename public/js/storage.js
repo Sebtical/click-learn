@@ -9,7 +9,7 @@ const DEFAULT_STATE = {
   attempts: [],
   progress: {},
   curriculum: {},
-  parentAuth: { code: null }
+  role: null
 };
 
 function loadState() {
@@ -18,6 +18,7 @@ function loadState() {
   try {
     const merged = { ...structuredClone(DEFAULT_STATE), ...JSON.parse(raw) };
     delete merged.apiKey; // ancien champ (avant le passage au proxy) : jamais reconduit, même s'il traîne dans un state sauvegardé.
+    delete merged.parentAuth; // ancien PIN parent : remplacé par le rôle vérifié côté serveur.
     return merged;
   } catch {
     return structuredClone(DEFAULT_STATE);

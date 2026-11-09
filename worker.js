@@ -27,6 +27,21 @@ async function constantTimeEqual(a, b) {
   return diff === 0;
 }
 
+// Déduit le rôle à partir du code reçu : enfant, parent1, parent2, ou null si le code est inconnu.
+// Tous les codes sont comparés à chaque fois, et un secret absent ne peut jamais correspondre.
+async function roleDepuisCode(code, env) {
+  const candidats = [
+    ['enfant', env.ACCESS_CODE],
+    ['parent1', env.PARENT_CODE_1],
+    ['parent2', env.PARENT_CODE_2]
+  ];
+  let role = null;
+  for (const [nom, valeur] of candidats) {
+    if (valeur && (await constantTimeEqual(code, valeur)) && role === null) role = nom;
+  }
+  return role;
+}
+
 // Reconstruit la demande côté serveur : modèle imposé, longueur plafonnée, champs non prévus écartés.
 // Renvoie null si la demande est invalide, pour la refuser avant tout appel payant.
 function construireCorpsAnthropic(texte) {
@@ -56,9 +71,7 @@ async function handleClaudeProxy(request, env) {
     });
   }
 
-  const providedCode = request.headers.get('x-access-code') || '';
-  const validCode = env.ACCESS_CODE || '';
-  if (!validCode || !(await constantTimeEqual(providedCode, validCode))) {
+  if ((await roleDepuisCode(request.headers.get('x-access-code') || '', env)) === null) {
     return new Response(JSON.stringify({ error: { message: 'Code d\'accès invalide.' } }), {
       status: 401,
       headers: { 'content-type': 'application/json' }
@@ -90,9 +103,36 @@ async function handleClaudeProxy(request, env) {
   });
 }
 
+// ── Profils ──
+// Indique au navigateur le rôle associé à son code, sans aucun appel payant.
+async function handleMoi(request, env) {
+  if (request.method !== 'GET') {
+    return new Response(JSON.stringify({ error: { message: 'Méthode non autorisée.' } }), {
+      status: 405,
+      headers: { 'content-type': 'application/json' }
+    });
+  }
+
+  const role = await roleDepuisCode(request.headers.get('x-access-code') || '', env);
+  if (role === null) {
+    return new Response(JSON.stringify({ error: { message: 'Code d\'accès invalide.' } }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' }
+    });
+  }
+  return new Response(JSON.stringify({ role }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' }
+  });
+}
+
+// ── Aiguillage ──
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/moi') {
+      return handleMoi(request, env);
+    }
     if (url.pathname === '/api/claude') {
       return handleClaudeProxy(request, env);
     }
