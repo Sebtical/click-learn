@@ -1,4 +1,3 @@
-const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
 const PROXY_URL = '/api/claude';
 
 // messages: [{ role: 'user', content: '...' | [{type:'text',...}, {type:'image',...}] }]
@@ -12,7 +11,6 @@ async function callClaude(accessCode, messages, { maxTokens = 1024, system = und
       'x-access-code': accessCode
     },
     body: JSON.stringify({
-      model: ANTHROPIC_MODEL,
       max_tokens: maxTokens,
       ...(system ? { system } : {}),
       messages
