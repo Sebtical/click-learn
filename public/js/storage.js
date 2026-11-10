@@ -30,6 +30,13 @@ function saveState(state) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+// Neutralise les caractères spéciaux HTML : à utiliser pour tout texte venant de la base ou de l'IA
+// avant de l'insérer dans la page, sinon un texte piégé pourrait exécuter du code sur un autre appareil.
+function echapperHtml(valeur) {
+  const remplacements = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return String(valeur ?? '').replace(/[&<>"']/g, c => remplacements[c]);
+}
+
 function uid() {
   return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 }

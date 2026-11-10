@@ -35,6 +35,14 @@ async function demanderRole(accessCode) {
   return data.role;
 }
 
+// Récupère le suivi de l'enfant pour l'espace parent (refusé par le serveur si le code n'est pas un code parent).
+async function chargerSuivi(accessCode) {
+  const response = await fetch('/api/parent/suivi', { headers: { 'x-access-code': accessCode } });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error?.message || `Erreur HTTP ${response.status}`);
+  return data;
+}
+
 // Envoie un prompt qui doit renvoyer du JSON, et parse la réponse (en tolérant les ```json ... ``` autour).
 async function callClaudeJSON(accessCode, content, { maxTokens = 1500, system } = {}) {
   const text = await callClaude(accessCode, [{ role: 'user', content }], { maxTokens, system });

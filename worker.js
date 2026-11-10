@@ -11,6 +11,7 @@ const MODELE_ANTHROPIC = 'claude-haiku-4-5-20251001';
 const PLAFOND_MAX_TOKENS = 5000; // appel le plus long de l'appli : 5000 (app.js)
 const TAILLE_MAX_LOT = 200;      // éléments par envoi /api/sync (le navigateur découpe en lots)
 const LONGUEUR_MAX_TEXTE = 2000; // au-delà, un texte est tronqué avant d'entrer en base
+const LIMITE_SUIVI = 5000;       // réponses les plus récentes renvoyées à l'espace parent
 
 // ── Outils ──
 
@@ -209,11 +210,31 @@ async function handleSync(request, env) {
   return reponseJson(200, { recus: tentatives.length + cours.length, ignores });
 }
 
+// ── Espace parent ──
+// Renvoie le profil, les réponses et le nombre de cours de l'enfant ; lecture réservée aux codes parents.
+async function handleSuivi(request, env) {
+  if (request.method !== 'GET') return erreur(405, 'Méthode non autorisée.');
+  const role = await roleDeLaRequete(request, env);
+  if (role === null) return erreur(401, 'Code d\'accès invalide.');
+  if (role !== 'parent1' && role !== 'parent2') return erreur(403, 'Espace réservé aux parents.');
+
+  const [profil, tentatives, cours] = await Promise.all([
+    env.DB.prepare('SELECT prenom, niveau, maj FROM profils WHERE role = ?1').bind('enfant').first(),
+    env.DB.prepare(
+      `SELECT id, quiz_id, matiere, theme, notion, type, correct, date, enonce, reponse_donnee, bonne_reponse
+       FROM tentatives WHERE joueur = ?1 ORDER BY date DESC LIMIT ?2`
+    ).bind('enfant', LIMITE_SUIVI).all(),
+    env.DB.prepare('SELECT COUNT(*) AS nb FROM cours WHERE joueur = ?1').bind('enfant').first()
+  ]);
+  return reponseJson(200, { profil: profil ?? null, tentatives: tentatives.results, nbCours: cours?.nb ?? 0 });
+}
+
 // ── Aiguillage ──
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === '/api/moi') return handleMoi(request, env);
+    if (url.pathname === '/api/parent/suivi') return handleSuivi(request, env);
     if (url.pathname === '/api/sync') return handleSync(request, env);
     if (url.pathname === '/api/claude') return handleClaudeProxy(request, env);
     return env.ASSETS.fetch(request);

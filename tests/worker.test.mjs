@@ -149,7 +149,8 @@ function faireD1() {
   const preparer = (sql, params = []) => ({
     bind: (...valeurs) => preparer(sql, valeurs),
     run: async () => { db.prepare(sql).run(...params); return { success: true }; },
-    all: async () => ({ results: db.prepare(sql).all(...params) })
+    all: async () => ({ results: db.prepare(sql).all(...params) }),
+    first: async () => db.prepare(sql).get(...params) ?? null
   });
   return {
     prepare: sql => preparer(sql),
@@ -257,6 +258,55 @@ test('les cours et le profil sont enregistrés, le profil mis à jour', async ()
   assert.deepEqual(JSON.parse(DB.lire('SELECT notions FROM cours')[0].notions), ['noyau']);
   const profils = DB.lire('SELECT role, niveau FROM profils');
   assert.deepEqual(profils.map(p => ({ ...p })), [{ role: 'enfant', niveau: '4ème' }]);
+});
+
+// ── Espace parent : lecture du suivi de l'enfant ──
+
+// Demande le suivi à /api/parent/suivi avec un code donné.
+function lireSuivi(env, code = 'code-parent-un', methode = 'GET') {
+  const requete = new Request('https://exemple.test/api/parent/suivi', {
+    method: methode,
+    headers: { 'x-access-code': code }
+  });
+  return worker.fetch(requete, env);
+}
+
+test('chaque parent lit le profil, les réponses et les cours de l\'enfant', async () => {
+  const env = { ...ENV, DB: faireD1() };
+  await synchroniser({
+    profil: { prenom: 'Léa', niveau: '5ème' },
+    tentatives: [TENTATIVE, { ...TENTATIVE, id: 'id-2', correct: true, date: '2026-11-11T10:00:00.000Z' }],
+    cours: [{ id: 'c-1', titre: 'La cellule', date: '2026-11-10' }]
+  }, env);
+  for (const code of ['code-parent-un', 'code-parent-deux']) {
+    const reponse = await lireSuivi(env, code);
+    assert.equal(reponse.status, 200);
+    const suivi = await reponse.json();
+    assert.equal(suivi.profil.prenom, 'Léa');
+    assert.equal(suivi.nbCours, 1);
+    assert.deepEqual(suivi.tentatives.map(t => t.id), ['id-2', 'id-1']); // plus récente d'abord
+    assert.equal(suivi.tentatives[1].reponse_donnee, '2/3');
+  }
+});
+
+test('le code enfant ne peut pas lire l\'espace parent', async () => {
+  const reponse = await lireSuivi({ ...ENV, DB: faireD1() }, ENV.ACCESS_CODE);
+  assert.equal(reponse.status, 403);
+});
+
+test('un code inconnu ne peut pas lire l\'espace parent', async () => {
+  const reponse = await lireSuivi({ ...ENV, DB: faireD1() }, 'inconnu');
+  assert.equal(reponse.status, 401);
+});
+
+test('/api/parent/suivi refuse une autre méthode que GET', async () => {
+  const reponse = await lireSuivi({ ...ENV, DB: faireD1() }, 'code-parent-un', 'POST');
+  assert.equal(reponse.status, 405);
+});
+
+test('sans aucune donnée partagée, le suivi est vide mais valide', async () => {
+  const suivi = await (await lireSuivi({ ...ENV, DB: faireD1() })).json();
+  assert.deepEqual(suivi, { profil: null, tentatives: [], nbCours: 0 });
 });
 
 // ── Requêtes invalides : refus avant tout appel payant ──
