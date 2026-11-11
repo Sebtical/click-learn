@@ -52,7 +52,12 @@ function regrouper(tentatives, cle) {
     if (t.date > g.derniere) g.derniere = t.date;
     groupes.set(k, g);
   });
-  return [...groupes.entries()].map(([k, g]) => ({ cle: k, ...g, pct: Math.round((g.justes / g.total) * 100) }));
+  return [...groupes.entries()].map(([k, g]) => ({ cle: k, ...g, pct: pourcentage(g.justes, g.total) }));
+}
+
+// Pourcentage arrondi, calculé sur des entiers (29/200 donne bien 15 et non 14 à cause des décimales binaires).
+function pourcentage(justes, total) {
+  return Math.round((justes * 100) / total);
 }
 
 // Date courte en français, ou tiret si la date est illisible.
@@ -81,7 +86,8 @@ function afficherSuivi({ profil, tentatives, nbCours }) {
   // Indicateurs généraux
   const total = tentatives.length;
   const justes = tentatives.filter(t => t.correct).length;
-  const pct = total ? Math.round((justes / total) * 100) : null;
+  const pct = total ? pourcentage(justes, total) : null;
+  const nbQuiz = new Set(tentatives.map(t => t.quiz_id || t.id)).size;
   const derniere = tentatives[0]?.date; // le serveur renvoie la plus récente en premier
 
   // Regroupements : matière, chapitre, notion, quiz
@@ -123,7 +129,7 @@ function afficherSuivi({ profil, tentatives, nbCours }) {
 
       <div class="kpis">
         <div class="kpi"><b>${nbCours}</b><span>Cours ajoutés</span></div>
-        <div class="kpi"><b>${historique.length < NB_QUIZ_HISTORIQUE ? historique.length : NB_QUIZ_HISTORIQUE + '+'}</b><span>Quiz faits</span></div>
+        <div class="kpi"><b>${nbQuiz}</b><span>Quiz faits</span></div>
         <div class="kpi"><b>${total}</b><span>Questions répondues</span></div>
         <div class="kpi"><b>${pct !== null ? pct + '%' : '—'}</b><span>Réussite du 1er coup</span></div>
       </div>

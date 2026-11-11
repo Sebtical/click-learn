@@ -13,7 +13,7 @@ function texteBonneReponse(q) {
   if (!q) return null;
   if (q.type === 'qcm') return q.choix?.[q.correctIndex] ?? null;
   if (q.type === 'qcm-multi') return (q.correctIndexes || []).map(i => q.choix[i]).join(', ');
-  if (q.type === 'num') return `${q.answer}${q.unit ? ' ' + q.unit : ''}`;
+  if (q.type === 'num') return fmtNum(q.answer) + (q.unit ? ` ${q.unit}` : ''); // même texte que celui révélé à l'élève
   if (q.type === 'court') return q.reponses?.[q.reponses.length - 1] ?? null;
   return null;
 }

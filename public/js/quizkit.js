@@ -1,5 +1,7 @@
-// Outils partagés par les générateurs de questions locaux (aucun appel API).
+// Outils partagés par les générateurs de questions locaux (aucun appel API)
+// et règles de correction des réponses saisies (utilisées par quiz.js).
 
+// ── Hasard et arithmétique ──
 const ri = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const shuffle = arr => {
@@ -12,6 +14,9 @@ const shuffle = arr => {
 };
 const gcd = (a, b) => b ? gcd(b, a % b) : a;
 
+// ── Mise en forme ──
+
+// Écrit un nombre à la française : virgule décimale, espace entre milliers, vrai signe moins.
 function fmtNum(x) {
   const r = Math.round(x * 1e6) / 1e6;
   const [i, d] = String(Math.abs(r)).split('.');
@@ -19,6 +24,7 @@ function fmtNum(x) {
   return (r < 0 ? '−' : '') + iSpaced + (d ? ',' + d : '');
 }
 
+// Met un texte sous une forme comparable : sans accents, sans majuscules, espaces simplifiés.
 function normalizeText(s) {
   return s.toString().trim().toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -26,8 +32,40 @@ function normalizeText(s) {
     .replace(/\s*\/\s*/g, '/'); // "19 / 15" et "19/15" doivent être équivalents (réponses en fraction)
 }
 
-// Formes acceptées pour une réponse en fraction : la fraction telle quelle, et sa forme simplifiée
-// (ou l'entier si elle se simplifie en nombre entier) — utilisé avec courtQ.
+// ── Correction des réponses saisies ──
+
+// Lit un nombre tapé par l'élève ; renvoie NaN si la saisie n'est pas un nombre simple.
+// Acceptés : espaces de milliers (« 1 080 »), virgule ou point, vrai signe moins (−), parenthèses
+// autour (« (−8) ») et une unité collée à la fin (« 12 € », « 45° »). Refusés : « 1/2 », « 3+4 ».
+function lireNombre(saisie) {
+  let s = String(saisie).replace(/[\s  ]/g, '').replace(/[−–]/g, '-').replace(',', '.');
+  const entreParentheses = /^\((.*)\)$/.exec(s);
+  if (entreParentheses) s = entreParentheses[1];
+  const m = /^([+-]?\d+(?:\.\d+)?)[a-zA-Z€°%²³]*$/.exec(s);
+  return m ? Number(m[1]) : NaN;
+}
+
+// Vrai si la saisie vaut la réponse attendue. Questions locales (exacte) : égalité stricte,
+// car leurs réponses sont des décimaux exacts. Questions IA : égalité à l'arrondi au centième près.
+function estReponseNumJuste(saisie, attendu, exacte = false) {
+  const n = lireNombre(saisie);
+  if (isNaN(n)) return false;
+  const ecart = Math.abs(n - attendu);
+  return exacte ? ecart < 1e-9 * Math.max(1, Math.abs(attendu)) : ecart < 0.005 + 1e-9;
+}
+
+// Compare une fraction saisie (« 10/8 » ou un entier) à num/den par produit en croix.
+// Renvoie { juste, simplifiee } : une fraction égale mais non simplifiée est juste.
+function comparerFraction(saisie, num, den) {
+  const m = /^(\d+)(?:\/(\d+))?$/.exec(String(saisie).replace(/\s/g, ''));
+  if (!m) return { juste: false, simplifiee: false };
+  const a = Number(m[1]), b = m[2] === undefined ? 1 : Number(m[2]);
+  if (b === 0) return { juste: false, simplifiee: false };
+  return { juste: a * den === b * num, simplifiee: gcd(a, b) === 1 };
+}
+
+// Formes affichées d'une réponse en fraction : telle quelle, puis simplifiée (ou l'entier).
+// La dernière forme est celle montrée comme « bonne réponse ».
 function fracAnswers(num, den) {
   const g = gcd(num, den);
   const sNum = num / g, sDen = den / g;
@@ -36,6 +74,8 @@ function fracAnswers(num, den) {
   return [...forms];
 }
 
+// ── Fabriques de questions ──
+
 // Questions QCM : même format que celui déjà utilisé par les quiz générés par l'IA
 // (choix + correctIndex + pisteReflexion), pour être rendues sans aucun changement dans quiz.js.
 function qcm(notion, enonce, correct, wrongs, pisteReflexion) {
@@ -43,9 +83,9 @@ function qcm(notion, enonce, correct, wrongs, pisteReflexion) {
   return { type: 'qcm', notion, enonce, choix, correctIndex: choix.indexOf(correct), pisteReflexion };
 }
 
-// Réponse numérique, comparée avec une petite tolérance pour les décimaux.
+// Réponse numérique exacte (questions locales : voir estReponseNumJuste).
 function numQ(notion, enonce, answer, pisteReflexion, unit = '') {
-  return { type: 'num', notion, enonce, answer, unit, pisteReflexion };
+  return { type: 'num', notion, enonce, answer, unit, pisteReflexion, exacte: true };
 }
 
 // Réponse courte : comparée après normalisation (accents, casse, espaces) à une ou plusieurs formes acceptées.
@@ -53,9 +93,16 @@ function courtQ(notion, enonce, reponses, pisteReflexion) {
   return { type: 'court', notion, enonce, reponses: Array.isArray(reponses) ? reponses : [reponses], pisteReflexion };
 }
 
+// Réponse en fraction : toute fraction égale est acceptée (voir comparerFraction).
+function fractionQ(notion, enonce, num, den, pisteReflexion) {
+  return { ...courtQ(notion, enonce, fracAnswers(num, den), pisteReflexion), fraction: [num, den] };
+}
+
 // QCM à réponses multiples : l'élève doit cocher toutes les bonnes réponses (et seulement elles).
+// Les doublons sont retirés, sinon une bonne réponse en double rendrait la question impossible.
 function qcmMulti(notion, enonce, corrects, wrongs, pisteReflexion) {
-  const choix = shuffle([...corrects, ...wrongs]);
-  const correctIndexes = corrects.map(c => choix.indexOf(c)).sort((a, b) => a - b);
+  const bonnes = [...new Set(corrects)];
+  const choix = shuffle([...bonnes, ...new Set(wrongs)].filter((v, i, a) => a.indexOf(v) === i));
+  const correctIndexes = bonnes.map(c => choix.indexOf(c)).sort((a, b) => a - b);
   return { type: 'qcm-multi', notion, enonce, choix, correctIndexes, pisteReflexion };
 }

@@ -187,6 +187,17 @@ const SYN_GROUPS_FR = [
   { mot: 'petit', synonymes: ['minuscule', 'minime'], autres: ['grand', 'fort'] }
 ];
 
+// Mauvais choix sûrs pour une question de vocabulaire : on écarte tout mot relié au mot demandé
+// en un ou deux pas (synonyme ou contraire, puis synonyme ou contraire de celui-ci). Exemple :
+// pour le contraire de « content », « triste » est écarté (contraire d'« heureux », synonyme de « content »).
+function mauvaisChoixVocabulaire(mot, bonneReponse) {
+  const paires = [...SYN_PAIRS_FR, ...ANT_PAIRS_FR];
+  const voisins = w => paires.filter(p => p.includes(w)).flat();
+  const proches = new Set([mot, bonneReponse, ...voisins(mot)]);
+  [...proches].forEach(w => voisins(w).forEach(v => proches.add(v)));
+  return [...new Set(paires.flat())].filter(w => !proches.has(w));
+}
+
 const WORDS_NATURE_FR = [
   { mot: 'chat', nature: 'nom' }, { mot: 'table', nature: 'nom' }, { mot: 'liberté', nature: 'nom' },
   { mot: 'rapide', nature: 'adjectif' }, { mot: 'beau', nature: 'adjectif' }, { mot: 'triste', nature: 'adjectif' },
@@ -299,7 +310,7 @@ const G_FR = {
     () => {
       const pair = pick(SYN_PAIRS_FR);
       const [mot, syn] = Math.random() < 0.5 ? pair : [pair[1], pair[0]];
-      const pool = [...new Set([].concat(...SYN_PAIRS_FR, ...ANT_PAIRS_FR))].filter(w => w !== mot && w !== syn);
+      const pool = mauvaisChoixVocabulaire(mot, syn);
       const wrongs = shuffle(pool).slice(0, 3);
       return qcm('vocabulaire : synonymes', `Quel est un synonyme du mot "${mot}" ?`, syn, wrongs,
         'Un synonyme a un sens proche ou identique. Essaie de remplacer le mot dans une phrase pour voir si le sens reste le même.');
@@ -307,7 +318,7 @@ const G_FR = {
     () => {
       const pair = pick(ANT_PAIRS_FR);
       const [mot, ant] = Math.random() < 0.5 ? pair : [pair[1], pair[0]];
-      const pool = [...new Set([].concat(...SYN_PAIRS_FR, ...ANT_PAIRS_FR))].filter(w => w !== mot && w !== ant);
+      const pool = mauvaisChoixVocabulaire(mot, ant);
       const wrongs = shuffle(pool).slice(0, 3);
       return qcm('vocabulaire : antonymes', `Quel est le contraire (antonyme) du mot "${mot}" ?`, ant, wrongs,
         'Un antonyme a un sens opposé. Pense à ce qui décrirait exactement l\'inverse.');

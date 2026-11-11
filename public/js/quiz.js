@@ -123,9 +123,10 @@ function showAnswerReveal(correctText, pisteReflexion) {
   document.getElementById('next-q').addEventListener('click', nextQuestion);
 }
 
-function showSuccessAndNext() {
+// Félicite, avec un conseil facultatif (ex. « Pense à simplifier »), puis propose la question suivante.
+function showSuccessAndNext(conseil = '') {
   const feedback = document.getElementById('feedback');
-  feedback.innerHTML = `<p class="ok">Bravo, bonne réponse ! 🎉</p><button id="next-q">Suivant</button>`;
+  feedback.innerHTML = `<p class="ok">Bravo, bonne réponse ! 🎉${conseil ? `<br>${echapperHtml(conseil)}` : ''}</p><button id="next-q">Suivant</button>`;
   document.getElementById('next-q').addEventListener('click', nextQuestion);
   fireConfetti();
 }
@@ -184,14 +185,13 @@ function onMultiAnswer() {
 
 function onNumAnswer() {
   const input = document.getElementById('num-answer');
-  const raw = input.value.trim().replace(',', '.');
+  const raw = input.value.trim();
   if (raw === '') return;
 
   const q = currentQuiz.questions[currentQuestionIndex];
-  const userNum = parseFloat(raw);
-  const correct = !isNaN(userNum) && Math.abs(userNum - q.answer) < 0.01;
+  const correct = estReponseNumJuste(raw, q.answer, q.exacte);
 
-  recordOnce(q, correct, input.value.trim());
+  recordOnce(q, correct, raw);
 
   if (correct) {
     input.disabled = true;
@@ -216,15 +216,17 @@ function onCourtAnswer() {
   if (raw === '') return;
 
   const q = currentQuiz.questions[currentQuestionIndex];
-  const norm = normalizeText(raw);
-  const correct = q.reponses.some(r => normalizeText(r) === norm);
+  // Fraction : toute fraction égale est juste ; sinon, comparaison du texte normalisé
+  const fraction = q.fraction ? comparerFraction(raw, ...q.fraction) : null;
+  const correct = fraction ? fraction.juste : q.reponses.some(r => normalizeText(r) === normalizeText(raw));
 
   recordOnce(q, correct, raw);
 
   if (correct) {
     input.disabled = true;
     document.getElementById('submit-court').remove();
-    showSuccessAndNext();
+    const conseil = fraction && !fraction.simplifiee ? `Pense à simplifier : ${q.reponses[q.reponses.length - 1]}` : '';
+    showSuccessAndNext(conseil);
   } else {
     attemptCount++;
     if (attemptCount >= MAX_ATTEMPTS) {
@@ -262,8 +264,8 @@ async function onOpenAnswer() {
     btn.remove();
     const feedback = document.getElementById('feedback');
     feedback.innerHTML = correct
-      ? `<p class="ok">Bravo, bonne réponse ! 🎉<br>${result.feedback}</p>`
-      : `<p class="hint">${result.statut === 'partiel' ? 'Presque ! 🤔' : 'Pas tout à fait... 🤔'}<br>${result.feedback}</p>`;
+      ? `<p class="ok">Bravo, bonne réponse ! 🎉<br>${echapperHtml(result.feedback)}</p>`
+      : `<p class="hint">${result.statut === 'partiel' ? 'Presque ! 🤔' : 'Pas tout à fait... 🤔'}<br>${echapperHtml(result.feedback)}</p>`;
     feedback.innerHTML += `<button id="next-q">Suivant</button>`;
     document.getElementById('next-q').addEventListener('click', nextQuestion);
 
@@ -283,7 +285,7 @@ function recordAttempt(question, correct, reponseDonnee = null) {
     quizId: currentQuiz.id,
     questionId: question.id,
     subject: currentQuiz.subject,
-    theme: currentQuiz.theme || null,
+    theme: question.theme || currentQuiz.theme || null,
     notion: question.notion,
     type: question.type,
     correct,

@@ -112,7 +112,7 @@ function chapterMasteryPct(subject, themeKey) {
   const relevant = state.attempts.filter(a => a.subject === subject && a.theme === themeKey);
   if (relevant.length === 0) return null;
   const correct = relevant.filter(a => a.correct).length;
-  return Math.round((correct / relevant.length) * 100);
+  return Math.round((correct * 100) / relevant.length); // calcul sur entiers : pas d'erreur d'arrondi à x,5
 }
 
 function masteryBadge(pct) {

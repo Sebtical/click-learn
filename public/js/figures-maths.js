@@ -36,18 +36,23 @@ function paveSVG(L, l, h, unit) {
   </svg>`;
 }
 
+// Dessine un angle : sommet centré pour un angle obtus (sinon la demi-droite sort du cadre),
+// petit carré pour un angle droit, arc sinon.
 function angleSVG(mesure) {
-  const cx = 20, cy = 100, r = 70;
+  const cx = mesure > 90 ? 80 : 20, cy = 100, r = 70;
   const rad = (mesure * Math.PI) / 180;
   const x2 = cx + r * Math.cos(-rad), y2 = cy + r * Math.sin(-rad);
   const largeArc = mesure > 180 ? 1 : 0;
   const arcR = 26;
   const ax = cx + arcR, ay = cy;
   const bx = cx + arcR * Math.cos(-rad), by = cy + arcR * Math.sin(-rad);
+  const marque = mesure === 90
+    ? `M${cx + 14} ${cy} v-14 h-14`
+    : `M${ax} ${ay} A${arcR} ${arcR} 0 ${largeArc} 0 ${bx} ${by}`;
   return `<svg viewBox="0 0 160 120" width="100%" style="max-width:220px" role="img" aria-label="Angle de ${mesure} degrés">
     <line class="fig-axis" x1="${cx}" y1="${cy}" x2="${cx + r}" y2="${cy}"/>
     <line class="fig-axis" x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}"/>
-    <path class="fig-mark" d="M${ax} ${ay} A${arcR} ${arcR} 0 ${largeArc} 0 ${bx} ${by}" fill="none"/>
+    <path class="fig-mark" d="${marque}" fill="none"/>
   </svg>`;
 }
 

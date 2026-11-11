@@ -144,9 +144,9 @@ const G_MATHS = {
     hard => {
       const d = pick(hard ? [8, 10, 20] : [2, 4, 5, 10]);
       const n1 = ri(1, d - 1), n2 = ri(1, d - n1);
-      return courtQ('fractions : addition',
+      return fractionQ('fractions : addition',
         `Calcule et donne le résultat sous forme de fraction : ${n1}/${d} + ${n2}/${d}`,
-        fracAnswers(n1 + n2, d),
+        n1 + n2, d,
         `On additionne les numérateurs car le dénominateur est le même : (${n1}+${n2})/${d}. N'oublie pas de simplifier si c'est possible.`);
     },
     hard => {
@@ -158,9 +158,9 @@ const G_MATHS = {
       const n2 = ri(1, d2 - 1);
       const commun = (d1 * d2) / gcd(d1, d2);
       const numCommun = n1 * (commun / d1) + n2 * (commun / d2);
-      return courtQ('fractions : addition (dénominateurs différents)',
+      return fractionQ('fractions : addition (dénominateurs différents)',
         `Calcule et donne le résultat sous forme de fraction : ${n1}/${d1} + ${n2}/${d2}`,
-        fracAnswers(numCommun, commun),
+        numCommun, commun,
         `Mets d'abord les deux fractions au même dénominateur (tu peux utiliser ${commun}) en multipliant numérateur ET dénominateur de chaque fraction par le même nombre, puis additionne les numérateurs. N'oublie pas de simplifier si c'est possible.`);
     },
     hard => {
@@ -217,7 +217,8 @@ const G_MATHS = {
       const total = unite * prix;
       const facteur = pick([2, 3]);
       const correct = fmtNum(total * facteur);
-      const wrongs = [fmtNum(total + facteur), fmtNum(total / facteur), fmtNum(total * facteur + 1)];
+      // Mauvais choix entiers et toujours différents de la bonne réponse (total ≥ 4)
+      const wrongs = [fmtNum(total + facteur), fmtNum(total * (facteur + 1)), fmtNum(total * facteur + 1)];
       return qcm('proportionnalité : reconnaître une situation proportionnelle',
         `${unite} objets coûtent ${fmtNum(total)} €. Dans une situation proportionnelle, combien coûteraient ${unite * facteur} objets ?`,
         correct, wrongs,
@@ -280,8 +281,9 @@ const G_MATHS = {
       return q;
     },
     () => {
-      const mesure = ri(1, 179);
-      const type = mesure < 90 ? 'aigu' : mesure > 90 ? 'obtus' : 'droit';
+      // On évite 76° à 104° (sauf 90°) : à l'œil, impossible de les distinguer d'un angle droit
+      const type = pick(['aigu', 'droit', 'obtus']);
+      const mesure = type === 'droit' ? 90 : type === 'aigu' ? ri(10, 75) : ri(105, 170);
       const wrongs = ['aigu', 'droit', 'obtus'].filter(t => t !== type);
       const q = qcm('angles : classer un angle', `Voici un angle. Comment le qualifie-t-on ?`, type, wrongs,
         'Un angle aigu mesure moins de 90°, un angle droit mesure exactement 90°, un angle obtus mesure entre 90° et 180°.');
