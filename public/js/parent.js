@@ -4,8 +4,6 @@
 // ── Réglages ──
 const NB_ERREURS_AFFICHEES = 20;
 const NB_QUIZ_HISTORIQUE = 10;
-const LIMITE_SUIVI_SERVEUR = 5000; // doit rester égal à LIMITE_SUIVI dans worker.js
-const e = echapperHtml; // raccourci de lecture pour les gabarits ci-dessous
 
 // ── Chargement ──
 
@@ -22,7 +20,7 @@ async function renderParentDashboard() {
     app.innerHTML = `
       <div class="card card-wide">
         <h1>👪 Espace parent</h1>
-        <p class="error">Impossible de charger le suivi : ${e(err.message)}</p>
+        <p class="error">Impossible de charger le suivi : ${echapperHtml(err.message)}</p>
         <div class="actions">
           <button id="parent-retry">Réessayer</button>
           <button id="parent-back" class="secondary">Retour à l'accueil</button>
@@ -42,23 +40,19 @@ function libelleChapitre(matiere, theme) {
   return theme;
 }
 
-// Regroupe les réponses selon une clé et compte total / justes pour chaque groupe.
+// Regroupe les réponses selon une clé et compte total / justes pour chaque groupe
+// (la matière de la première réponse du groupe est gardée, utile pour l'historique des quiz).
 function regrouper(tentatives, cle) {
   const groupes = new Map();
   tentatives.forEach(t => {
     const k = cle(t);
-    const g = groupes.get(k) || { total: 0, justes: 0, derniere: t.date };
+    const g = groupes.get(k) || { total: 0, justes: 0, derniere: t.date, matiere: t.matiere };
     g.total++;
     if (t.correct) g.justes++;
     if (t.date > g.derniere) g.derniere = t.date;
     groupes.set(k, g);
   });
   return [...groupes.entries()].map(([k, g]) => ({ cle: k, ...g, pct: pourcentage(g.justes, g.total) }));
-}
-
-// Pourcentage arrondi, calculé sur des entiers (29/200 donne bien 15 et non 14 à cause des décimales binaires).
-function pourcentage(justes, total) {
-  return Math.round((justes * 100) / total);
 }
 
 // Date courte en français, ou tiret si la date est illisible.
@@ -70,7 +64,7 @@ function dateCourte(iso) {
 // ── Affichage ──
 
 // Construit l'écran de suivi à partir des données du serveur.
-function afficherSuivi({ profil, tentatives, nbCours }) {
+function afficherSuivi({ profil, tentatives, nbCours, tronque }) {
   // Aucune donnée partagée : on explique comment démarrer
   if (!profil && tentatives.length === 0) {
     app.innerHTML = `
@@ -99,35 +93,34 @@ function afficherSuivi({ profil, tentatives, nbCours }) {
     .filter(n => n.justes < n.total).sort((a, b) => a.pct - b.pct).slice(0, 5);
   const historique = regrouper(tentatives, t => t.quiz_id || t.id)
     .sort((a, b) => b.derniere.localeCompare(a.derniere)).slice(0, NB_QUIZ_HISTORIQUE);
-  const matiereDuQuiz = new Map(tentatives.map(t => [t.quiz_id || t.id, t.matiere]));
   const erreurs = tentatives.filter(t => !t.correct).slice(0, NB_ERREURS_AFFICHEES);
 
   // Gabarits des listes
   const lignesMatieres = parMatiere.map(m =>
-    `<li><span>${e(m.cle)}</span><span>${m.justes}/${m.total} (${m.pct}%)</span></li>`).join('');
+    `<li><span>${echapperHtml(m.cle)}</span><span>${m.justes}/${m.total} (${m.pct}%)</span></li>`).join('');
   const lignesChapitres = parChapitre.map(c => {
     const [matiere, theme] = c.cle.split('|');
-    return `<li><span>${e(matiere)} — ${e(libelleChapitre(matiere, theme))}</span><span>${masteryBadge(c.pct)} <small>${c.total} q.</small></span></li>`;
+    return `<li><span>${echapperHtml(matiere)} — ${echapperHtml(libelleChapitre(matiere, theme))}</span><span>${masteryBadge(c.pct)} <small>${c.total} q.</small></span></li>`;
   }).join('');
   const lignesFaibles = aRetravailler.map(n =>
-    `<li><span>${e(n.cle)}</span><span>${n.justes}/${n.total}</span></li>`).join('');
+    `<li><span>${echapperHtml(n.cle)}</span><span>${n.justes}/${n.total}</span></li>`).join('');
   const lignesErreurs = erreurs.map(t => `
     <li class="exercise-item">
-      <p class="subtitle">${dateCourte(t.date)} — ${e(t.matiere)} — ${e(t.notion)}</p>
-      <p class="ex-statement">🔴 ${e(t.enonce || '(énoncé non conservé)')}</p>
-      <p class="hint">Sa réponse : <strong>${t.reponse_donnee ? e(t.reponse_donnee) : '<em>non conservée</em>'}</strong>
-        ${t.bonne_reponse ? `<br>Bonne réponse : <strong>${e(t.bonne_reponse)}</strong>` : ''}</p>
+      <p class="subtitle">${dateCourte(t.date)} — ${echapperHtml(t.matiere)} — ${echapperHtml(t.notion)}</p>
+      <p class="ex-statement">🔴 ${echapperHtml(t.enonce || '(énoncé non conservé)')}</p>
+      <p class="hint">Sa réponse : <strong>${t.reponse_donnee ? echapperHtml(t.reponse_donnee) : '<em>non conservée</em>'}</strong>
+        ${t.bonne_reponse ? `<br>Bonne réponse : <strong>${echapperHtml(t.bonne_reponse)}</strong>` : ''}</p>
     </li>`).join('');
   const lignesHistorique = historique.map(h =>
-    `<li><span>${dateCourte(h.derniere)} — ${e(matiereDuQuiz.get(h.cle))}</span><span>${h.justes}/${h.total}</span></li>`).join('');
+    `<li><span>${dateCourte(h.derniere)} — ${echapperHtml(h.matiere)}</span><span>${h.justes}/${h.total}</span></li>`).join('');
 
   // Page complète
   app.innerHTML = `
     <div class="card card-wide">
       <h1>👪 Espace parent</h1>
-      <p class="subtitle">Suivi de ${e(profil?.prenom || 'ton enfant')}${profil?.niveau ? ` — niveau ${e(profil.niveau)}` : ''}
+      <p class="subtitle">Suivi de ${echapperHtml(profil?.prenom || 'ton enfant')}${profil?.niveau ? ` — niveau ${echapperHtml(profil.niveau)}` : ''}
         ${derniere ? `<br>Dernière activité : ${dateCourte(derniere)}` : ''}
-        ${total >= LIMITE_SUIVI_SERVEUR ? `<br>Chiffres calculés sur les ${fmtNum(LIMITE_SUIVI_SERVEUR)} dernières réponses.` : ''}</p>
+        ${tronque ? `<br>Chiffres calculés sur les ${fmtNum(total)} dernières réponses.` : ''}</p>
 
       <div class="kpis">
         <div class="kpi"><b>${nbCours}</b><span>Cours ajoutés</span></div>

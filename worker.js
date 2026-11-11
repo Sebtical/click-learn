@@ -81,6 +81,16 @@ function roleDeLaRequete(request, env) {
   return roleDepuisCode(request.headers.get('x-access-code') || '', env);
 }
 
+// Contrôle commun à toutes les routes : méthode attendue, code connu, rôle autorisé (null = tous).
+// Renvoie { role } si l'accès est accordé, sinon { refus } : la réponse d'erreur à renvoyer telle quelle.
+async function controlerAcces(request, env, methode, rolesAutorises = null, messageRefus = 'Accès non autorisé.') {
+  if (request.method !== methode) return { refus: erreur(405, 'Méthode non autorisée.') };
+  const role = await roleDeLaRequete(request, env);
+  if (role === null) return { refus: erreur(401, 'Code d\'accès invalide.') };
+  if (rolesAutorises && !rolesAutorises.includes(role)) return { refus: erreur(403, messageRefus) };
+  return { role };
+}
+
 // Reconstruit la demande côté serveur : modèle imposé, longueur plafonnée, champs non prévus écartés.
 // Renvoie null si la demande est invalide, pour la refuser avant tout appel payant.
 function construireCorpsAnthropic(texte) {
@@ -98,8 +108,8 @@ function construireCorpsAnthropic(texte) {
 // ── Proxy ──
 // Vérifie le code d'accès puis relaie vers Anthropic une demande bornée par le serveur.
 async function handleClaudeProxy(request, env) {
-  if (request.method !== 'POST') return erreur(405, 'Méthode non autorisée.');
-  if ((await roleDeLaRequete(request, env)) === null) return erreur(401, 'Code d\'accès invalide.');
+  const { refus } = await controlerAcces(request, env, 'POST');
+  if (refus) return refus;
 
   // Le navigateur ne décide ni du modèle ni de la longueur maximale : la dépense par appel est bornée
   // (le nombre d'appels, lui, ne l'est pas : c'est le rôle de la limite de dépenses côté Anthropic).
@@ -125,10 +135,8 @@ async function handleClaudeProxy(request, env) {
 // ── Profils ──
 // Indique au navigateur le rôle associé à son code, sans aucun appel payant.
 async function handleMoi(request, env) {
-  if (request.method !== 'GET') return erreur(405, 'Méthode non autorisée.');
-  const role = await roleDeLaRequete(request, env);
-  if (role === null) return erreur(401, 'Code d\'accès invalide.');
-  return reponseJson(200, { role });
+  const { role, refus } = await controlerAcces(request, env, 'GET');
+  return refus ?? reponseJson(200, { role });
 }
 
 // ── Synchronisation ──
@@ -162,10 +170,8 @@ function valeursCours(c) {
 // Enregistre les réponses, cours et profil de l'enfant. Seul le code enfant peut écrire ici,
 // et le joueur est toujours fixé par le serveur, quoi que le navigateur envoie.
 async function handleSync(request, env) {
-  if (request.method !== 'POST') return erreur(405, 'Méthode non autorisée.');
-  const role = await roleDeLaRequete(request, env);
-  if (role === null) return erreur(401, 'Code d\'accès invalide.');
-  if (role !== 'enfant') return erreur(403, 'Seul le profil enfant partage ses résultats.');
+  const { role, refus } = await controlerAcces(request, env, 'POST', ['enfant'], 'Seul le profil enfant partage ses résultats.');
+  if (refus) return refus;
 
   // Lecture et contrôle de la forme générale de l'envoi
   const envoi = lireObjetJson(await request.text());
@@ -216,12 +222,10 @@ async function handleSync(request, env) {
 }
 
 // ── Espace parent ──
-// Renvoie le profil, les réponses et le nombre de cours de l'enfant ; lecture réservée aux codes parents.
+// Renvoie le profil, les dernières réponses et le nombre de cours de l'enfant ; lecture réservée aux codes parents.
 async function handleSuivi(request, env) {
-  if (request.method !== 'GET') return erreur(405, 'Méthode non autorisée.');
-  const role = await roleDeLaRequete(request, env);
-  if (role === null) return erreur(401, 'Code d\'accès invalide.');
-  if (role !== 'parent1' && role !== 'parent2') return erreur(403, 'Espace réservé aux parents.');
+  const { refus } = await controlerAcces(request, env, 'GET', ['parent1', 'parent2'], 'Espace réservé aux parents.');
+  if (refus) return refus;
 
   let profil, tentatives, cours;
   try {
@@ -236,7 +240,12 @@ async function handleSuivi(request, env) {
   } catch {
     return erreur(500, 'Lecture du suivi impossible pour le moment.');
   }
-  return reponseJson(200, { profil: profil ?? null, tentatives: tentatives.results, nbCours: cours?.nb ?? 0 });
+  return reponseJson(200, {
+    profil: profil ?? null,
+    tentatives: tentatives.results,
+    nbCours: cours?.nb ?? 0,
+    tronque: tentatives.results.length === LIMITE_SUIVI // l'écran parent le signale : chiffres sur les dernières réponses
+  });
 }
 
 // ── Aiguillage ──

@@ -81,7 +81,7 @@ test('pourcentages arrondis sans erreur de décimales binaires', () => {
   assert.equal(pourcentage(2, 3), 67);
   const groupes = appli('regrouper')([{ correct: 1, date: 'a', matiere: 'M' }, { correct: 0, date: 'b', matiere: 'M' }], t => t.matiere);
   // JSON : les objets du bac à sable n'ont pas le même prototype que ceux de Node
-  assert.deepEqual(JSON.parse(JSON.stringify(groupes)), [{ cle: 'M', total: 2, justes: 1, derniere: 'b', pct: 50 }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(groupes)), [{ cle: 'M', total: 2, justes: 1, derniere: 'b', matiere: 'M', pct: 50 }]);
 });
 
 // ── Partage avec le serveur (sync.js) ──
@@ -97,10 +97,11 @@ function etatEnfant() {
 test('une réponse arrivée pendant un envoi en cours part aussi', async () => {
   const envois = [];
   let libererPremierEnvoi;
+  const accepte = () => new Response('{"recus":1,"ignores":0}');
   bacASable.fetch = (url, options) => {
     envois.push(JSON.parse(options.body));
-    if (envois.length === 1) return new Promise(r => { libererPremierEnvoi = () => r({ ok: true }); });
-    return Promise.resolve({ ok: true });
+    if (envois.length === 1) return new Promise(r => { libererPremierEnvoi = () => r(accepte()); });
+    return Promise.resolve(accepte());
   };
   bacASable.state = etatEnfant();
   const synchroniser = appli('synchroniser');
@@ -118,7 +119,7 @@ test('une réponse arrivée pendant un envoi en cours part aussi', async () => {
 });
 
 test('un envoi refusé ne marque rien comme partagé', async () => {
-  bacASable.fetch = () => Promise.resolve({ ok: false });
+  bacASable.fetch = () => Promise.resolve(new Response('{"error":{"message":"refus"}}', { status: 403 }));
   bacASable.state = etatEnfant();
   await appli('synchroniser')();
   assert.equal(bacASable.state.attempts[0].synchro, undefined);
@@ -135,6 +136,12 @@ test('un appareil parent ou non informé n\'envoie rien', async () => {
   assert.equal(appli('repriseADemander')(), true, 'l\'enfant doit voir l\'écran d\'information, même sans historique');
 });
 
+test('les lots du navigateur ne dépassent pas la limite du serveur', () => {
+  const serveur = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
+  const limiteServeur = Number(/const TAILLE_MAX_LOT = (\d+)/.exec(serveur)[1]);
+  assert.ok(appli('TAILLE_LOT_SYNCHRO') <= limiteServeur);
+});
+
 // ── Lecture des réponses du serveur (api.js) ──
 test('les erreurs du serveur restent lisibles, même sans JSON', async () => {
   const lireReponse = appli('lireReponse');
@@ -142,6 +149,29 @@ test('les erreurs du serveur restent lisibles, même sans JSON', async () => {
   await assert.rejects(lireReponse(new Response('{"error":{"message":"Code refusé"}}', { status: 401 })), /Code refusé/);
   await assert.rejects(lireReponse(new Response('pas du json', { status: 200 })), /illisible/);
   assert.deepEqual(JSON.parse(JSON.stringify(await lireReponse(new Response('{"role":"enfant"}')))), { role: 'enfant' });
+});
+
+test('l\'écran parent s\'affiche, échappe les textes et signale la troncature', () => {
+  const piege = '<img src=x onerror=alert(1)>';
+  bacASable.app = { innerHTML: '' };
+  bacASable.document = { getElementById: () => ({ addEventListener() {} }) };
+  bacASable.masteryBadge = pct => `${pct}%`; // masteryBadge et renderHome sont dans app.js, non chargé ici
+  bacASable.renderHome = () => {};
+  const ligne = (id, correct, extra = {}) => ({
+    id, quiz_id: 'q1', matiere: 'Maths', theme: 'fractions', notion: 'Simplifier', type: 'qcm',
+    correct, date: '2026-11-10T10:00:00Z', enonce: 'Simplifie 6/8', reponse_donnee: '2/3', bonne_reponse: '3/4', ...extra
+  });
+  appli('afficherSuivi')({
+    profil: { prenom: 'Léa', niveau: '5ème' }, nbCours: 1, tronque: true,
+    tentatives: [ligne('a', 0, { reponse_donnee: piege, notion: piege }), ligne('b', 1), ligne('c', 0, { reponse_donnee: null })]
+  });
+  const page = bacASable.app.innerHTML;
+  assert.ok(page.includes('Suivi de Léa'));
+  assert.ok(!page.includes('<img'), 'le texte piégé ne doit jamais devenir une balise');
+  assert.ok(page.includes('&lt;img'));
+  assert.ok(page.includes('non conservée'));
+  assert.ok(page.includes('dernières réponses'), 'la troncature doit être signalée');
+  assert.match(page, /<b>1<\/b><span>Quiz faits/);
 });
 
 // ── Vocabulaire ──

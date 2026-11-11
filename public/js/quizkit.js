@@ -32,6 +32,22 @@ function normalizeText(s) {
     .replace(/\s*\/\s*/g, '/'); // "19 / 15" et "19/15" doivent être équivalents (réponses en fraction)
 }
 
+// Texte de la bonne réponse d'une question, quel que soit son type (null pour une question ouverte).
+// Seule source de ce texte : montré à l'élève après deux essais et enregistré pour l'espace parent.
+function texteBonneReponse(q) {
+  if (!q) return null;
+  if (q.type === 'qcm') return q.choix?.[q.correctIndex] ?? null;
+  if (q.type === 'qcm-multi') return (q.correctIndexes || []).map(i => q.choix[i]).join(', ');
+  if (q.type === 'num') return fmtNum(q.answer) + (q.unit ? ` ${q.unit}` : '');
+  if (q.type === 'court') return q.reponses?.[q.reponses.length - 1] ?? null;
+  return null;
+}
+
+// Pourcentage arrondi, calculé sur des entiers (29/200 donne bien 15 et non 14 à cause des décimales binaires).
+function pourcentage(justes, total) {
+  return Math.round((justes * 100) / total);
+}
+
 // ── Correction des réponses saisies ──
 
 // Lit un nombre tapé par l'élève ; renvoie NaN si la saisie n'est pas un nombre simple.

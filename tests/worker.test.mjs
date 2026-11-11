@@ -313,7 +313,7 @@ test('/api/parent/suivi refuse une autre méthode que GET', async () => {
 
 test('sans aucune donnée partagée, le suivi est vide mais valide', async () => {
   const suivi = await (await lireSuivi({ ...ENV, DB: faireD1() })).json();
-  assert.deepEqual(suivi, { profil: null, tentatives: [], nbCours: 0 });
+  assert.deepEqual(suivi, { profil: null, tentatives: [], nbCours: 0, tronque: false });
 });
 
 // ── Requêtes invalides : refus avant tout appel payant ──

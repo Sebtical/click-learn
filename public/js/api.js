@@ -21,24 +21,29 @@ async function lireReponse(response) {
   return data;
 }
 
+// Seul point d'appel au serveur : ajoute le code d'accès, envoie le corps en JSON s'il y en a un,
+// et renvoie la réponse lue (ou lève une erreur lisible).
+async function appelServeur(chemin, accessCode, { methode = 'GET', corps } = {}) {
+  const response = await fetch(chemin, {
+    method: methode,
+    headers: {
+      'x-access-code': accessCode,
+      ...(corps !== undefined ? { 'content-type': 'application/json' } : {})
+    },
+    ...(corps !== undefined ? { body: JSON.stringify(corps) } : {})
+  });
+  return lireReponse(response);
+}
+
 // ── Claude (via le proxy) ──
 
 // Envoie des messages à Claude et renvoie le texte de sa réponse.
 // messages : [{ role: 'user', content: '...' | [{type:'text',...}, {type:'image',...}] }]
 async function callClaude(accessCode, messages, { maxTokens = 1024, system = undefined } = {}) {
-  const response = await fetch(PROXY_URL, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-access-code': accessCode
-    },
-    body: JSON.stringify({
-      max_tokens: maxTokens,
-      ...(system ? { system } : {}),
-      messages
-    })
+  const data = await appelServeur(PROXY_URL, accessCode, {
+    methode: 'POST',
+    corps: { max_tokens: maxTokens, ...(system ? { system } : {}), messages }
   });
-  const data = await lireReponse(response);
   return data.content.map(block => block.text || '').join('');
 }
 
@@ -49,18 +54,21 @@ async function callClaudeJSON(accessCode, content, { maxTokens = 1500, system } 
   return JSON.parse(cleaned);
 }
 
-// ── Profils et suivi ──
+// ── Profils, partage et suivi ──
 
 // Demande au serveur le rôle lié à ce code (enfant, parent1, parent2) ; lève une erreur si le code est refusé.
 async function demanderRole(accessCode) {
-  const response = await fetch('/api/moi', { headers: { 'x-access-code': accessCode } });
-  return (await lireReponse(response)).role;
+  return (await appelServeur('/api/moi', accessCode)).role;
+}
+
+// Envoie un lot de résultats de l'enfant (réponses, cours, profil) ; lève une erreur si le serveur refuse.
+function envoyerResultats(accessCode, corps) {
+  return appelServeur('/api/sync', accessCode, { methode: 'POST', corps });
 }
 
 // Récupère le suivi de l'enfant pour l'espace parent (refusé par le serveur si le code n'est pas un code parent).
-async function chargerSuivi(accessCode) {
-  const response = await fetch('/api/parent/suivi', { headers: { 'x-access-code': accessCode } });
-  return lireReponse(response);
+function chargerSuivi(accessCode) {
+  return appelServeur('/api/parent/suivi', accessCode);
 }
 
 // ── Photos ──

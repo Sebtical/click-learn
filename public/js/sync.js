@@ -3,21 +3,11 @@
 // pour l'historique déjà présent. Hors ligne, rien n'est perdu : l'envoi est retenté plus tard.
 
 // ── Réglages ──
-const TAILLE_LOT_SYNCHRO = 200; // doit rester ≤ TAILLE_MAX_LOT dans worker.js
+const TAILLE_LOT_SYNCHRO = 200; // ≤ TAILLE_MAX_LOT dans worker.js (vérifié par tests/client.test.mjs)
 let synchroEnCours = false;
 let synchroARelancer = false; // une réponse est arrivée pendant un envoi : relancer à la fin
 
 // ── Contenu des réponses ──
-
-// Texte de la bonne réponse d'une question, quel que soit son type (null pour une question ouverte).
-function texteBonneReponse(q) {
-  if (!q) return null;
-  if (q.type === 'qcm') return q.choix?.[q.correctIndex] ?? null;
-  if (q.type === 'qcm-multi') return (q.correctIndexes || []).map(i => q.choix[i]).join(', ');
-  if (q.type === 'num') return fmtNum(q.answer) + (q.unit ? ` ${q.unit}` : ''); // même texte que celui révélé à l'élève
-  if (q.type === 'court') return q.reponses?.[q.reponses.length - 1] ?? null;
-  return null;
-}
 
 // Complète une ancienne réponse (sans énoncé) en retrouvant sa question dans les quiz sauvegardés.
 function enrichirTentative(a) {
@@ -72,6 +62,26 @@ function renderConfirmReprise() {
 
 // ── Envoi ──
 
+// Sauvegarde l'état puis partage ce qui est nouveau : à appeler après tout ajout de réponse ou de cours.
+function enregistrerEtPartager() {
+  saveState(state);
+  synchroniser();
+}
+
+// Envoie une liste (réponses ou cours) par lots ; chaque lot accepté est marqué comme partagé.
+// Lève une erreur au premier lot refusé : le reste attendra le prochain envoi.
+async function envoyerParLots(liste, champ) {
+  for (let i = 0; i < liste.length; i += TAILLE_LOT_SYNCHRO) {
+    const lot = liste.slice(i, i + TAILLE_LOT_SYNCHRO);
+    await envoyerResultats(state.accessCode, {
+      profil: { prenom: state.profile.prenom, niveau: state.profile.niveau },
+      [champ]: champ === 'tentatives' ? lot.map(enrichirTentative) : lot
+    });
+    lot.forEach(objet => { objet.synchro = true; });
+    saveState(state);
+  }
+}
+
 // Envoie au serveur, par lots, tout ce qui n'a pas encore été partagé. Silencieux en cas d'échec.
 // Si un envoi est déjà en cours, on le note et on relance une fois à la fin, pour ne rien laisser en attente.
 async function synchroniser() {
@@ -79,30 +89,10 @@ async function synchroniser() {
   if (synchroEnCours) { synchroARelancer = true; return; }
   synchroEnCours = true;
   try {
-    // Rassemble ce qui reste à envoyer
-    const elements = [
-      ...state.attempts.filter(a => !a.synchro).map(a => ({ genre: 'tentative', objet: a })),
-      ...state.lessons.filter(l => !l.synchro).map(l => ({ genre: 'cours', objet: l }))
-    ];
-
-    // Envoie lot par lot ; chaque lot accepté est marqué comme partagé
-    for (let i = 0; i < elements.length; i += TAILLE_LOT_SYNCHRO) {
-      const lot = elements.slice(i, i + TAILLE_LOT_SYNCHRO);
-      const reponse = await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-access-code': state.accessCode },
-        body: JSON.stringify({
-          profil: { prenom: state.profile.prenom, niveau: state.profile.niveau },
-          tentatives: lot.filter(el => el.genre === 'tentative').map(el => enrichirTentative(el.objet)),
-          cours: lot.filter(el => el.genre === 'cours').map(el => el.objet)
-        })
-      });
-      if (!reponse.ok) return; // nouvel essai au prochain résultat ou au prochain démarrage
-      lot.forEach(el => { el.objet.synchro = true; });
-      saveState(state);
-    }
+    await envoyerParLots(state.attempts.filter(a => !a.synchro), 'tentatives');
+    await envoyerParLots(state.lessons.filter(l => !l.synchro), 'cours');
   } catch {
-    // Hors ligne : nouvel essai plus tard
+    // Hors ligne ou refus du serveur : nouvel essai au prochain résultat ou au prochain démarrage
   } finally {
     synchroEnCours = false;
     if (synchroARelancer) {

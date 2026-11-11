@@ -115,7 +115,7 @@ function chapterMasteryPct(subject, themeKey) {
   const relevant = state.attempts.filter(a => a.subject === subject && a.theme === themeKey);
   if (relevant.length === 0) return null;
   const correct = relevant.filter(a => a.correct).length;
-  return Math.round((correct * 100) / relevant.length); // calcul sur entiers : pas d'erreur d'arrondi à x,5
+  return pourcentage(correct, relevant.length);
 }
 
 function masteryBadge(pct) {
@@ -588,8 +588,7 @@ function renderLessonPreview(extracted, imageDataUrls) {
       date: new Date().toISOString()
     };
     state.lessons.push(lesson);
-    saveState(state);
-    synchroniser();
+    enregistrerEtPartager();
     renderLessonDetail(lesson);
   });
   document.getElementById('cancel-btn').addEventListener('click', renderHome);
@@ -761,8 +760,7 @@ function renderExerciseResult(result, imageDataUrls) {
       bonneReponse: null
     });
   });
-  saveState(state);
-  synchroniser();
+  enregistrerEtPartager();
 
   const allCorrect = result.exercices.every(ex => ex.statut === 'correct');
 

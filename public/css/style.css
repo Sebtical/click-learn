@@ -492,18 +492,6 @@ textarea {
   opacity: .7;
 }
 
-/* Espace parent */
-.pinbox {
-  max-width: 340px;
-  text-align: center;
-}
-
-.pinbox input {
-  text-align: center;
-  font-size: 1.6rem;
-  letter-spacing: .5em;
-  padding-left: .5em;
-}
 
 .kpis {
   display: grid;

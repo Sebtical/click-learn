@@ -148,7 +148,7 @@ function onQcmAnswer(e) {
     e.target.disabled = true;
     if (attemptCount >= MAX_ATTEMPTS) {
       document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
-      showAnswerReveal(q.choix[q.correctIndex], q.pisteReflexion);
+      showAnswerReveal(texteBonneReponse(q), q.pisteReflexion);
     } else {
       showRetryHint(q.pisteReflexion);
     }
@@ -175,8 +175,7 @@ function onMultiAnswer() {
     if (attemptCount >= MAX_ATTEMPTS) {
       document.querySelectorAll('#choices input').forEach(el => el.disabled = true);
       document.getElementById('submit-multi').remove();
-      const correctText = q.correctIndexes.map(i => q.choix[i]).join(', ');
-      showAnswerReveal(correctText, q.pisteReflexion);
+      showAnswerReveal(texteBonneReponse(q), q.pisteReflexion);
     } else {
       showRetryHint(q.pisteReflexion);
     }
@@ -202,7 +201,7 @@ function onNumAnswer() {
     if (attemptCount >= MAX_ATTEMPTS) {
       input.disabled = true;
       document.getElementById('submit-num').remove();
-      showAnswerReveal(fmtNum(q.answer) + (q.unit ? ` ${q.unit}` : ''), q.pisteReflexion);
+      showAnswerReveal(texteBonneReponse(q), q.pisteReflexion);
     } else {
       showRetryHint(q.pisteReflexion);
       input.select();
@@ -225,14 +224,14 @@ function onCourtAnswer() {
   if (correct) {
     input.disabled = true;
     document.getElementById('submit-court').remove();
-    const conseil = fraction && !fraction.simplifiee ? `Pense à simplifier : ${q.reponses[q.reponses.length - 1]}` : '';
+    const conseil = fraction && !fraction.simplifiee ? `Pense à simplifier : ${texteBonneReponse(q)}` : '';
     showSuccessAndNext(conseil);
   } else {
     attemptCount++;
     if (attemptCount >= MAX_ATTEMPTS) {
       input.disabled = true;
       document.getElementById('submit-court').remove();
-      showAnswerReveal(q.reponses[q.reponses.length - 1], q.pisteReflexion);
+      showAnswerReveal(texteBonneReponse(q), q.pisteReflexion);
     } else {
       showRetryHint(q.pisteReflexion);
       input.select();
@@ -295,9 +294,8 @@ function recordAttempt(question, correct, reponseDonnee = null) {
     bonneReponse: texteBonneReponse(question)
   };
   state.attempts.push(attempt);
-  saveState(state);
   sessionResults.push(attempt);
-  synchroniser();
+  enregistrerEtPartager();
 }
 
 function nextQuestion() {
