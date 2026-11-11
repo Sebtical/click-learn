@@ -175,7 +175,8 @@ async function handleSync(request, env) {
   if (!Array.isArray(tentatives) || !Array.isArray(cours)) return erreur(400, 'Requête invalide.');
   if (tentatives.length + cours.length > TAILLE_MAX_LOT) return erreur(400, 'Envoi trop volumineux.');
 
-  // Préparation des écritures : les éléments invalides sont écartés et comptés
+  // Préparation des écritures : les éléments invalides sont écartés et comptés.
+  // Le rôle est toujours lié en dernier : ?13 pour les réponses, ?7 pour les cours.
   const ecritures = [];
   let ignores = 0;
   for (const t of tentatives) {
@@ -205,8 +206,12 @@ async function handleSync(request, env) {
     ).bind(role, texteBorne(profil.prenom, 60), texteBorne(profil.niveau, 10), new Date().toISOString()));
   }
 
-  // Écriture en une seule transaction : tout ou rien
-  if (ecritures.length) await env.DB.batch(ecritures);
+  // Écriture en une seule transaction : tout ou rien (un batch compte pour une seule requête D1)
+  try {
+    if (ecritures.length) await env.DB.batch(ecritures);
+  } catch {
+    return erreur(500, 'Enregistrement impossible pour le moment.'); // le navigateur réessaiera plus tard
+  }
   return reponseJson(200, { recus: tentatives.length + cours.length, ignores });
 }
 
@@ -218,14 +223,19 @@ async function handleSuivi(request, env) {
   if (role === null) return erreur(401, 'Code d\'accès invalide.');
   if (role !== 'parent1' && role !== 'parent2') return erreur(403, 'Espace réservé aux parents.');
 
-  const [profil, tentatives, cours] = await Promise.all([
-    env.DB.prepare('SELECT prenom, niveau, maj FROM profils WHERE role = ?1').bind('enfant').first(),
-    env.DB.prepare(
-      `SELECT id, quiz_id, matiere, theme, notion, type, correct, date, enonce, reponse_donnee, bonne_reponse
-       FROM tentatives WHERE joueur = ?1 ORDER BY date DESC LIMIT ?2`
-    ).bind('enfant', LIMITE_SUIVI).all(),
-    env.DB.prepare('SELECT COUNT(*) AS nb FROM cours WHERE joueur = ?1').bind('enfant').first()
-  ]);
+  let profil, tentatives, cours;
+  try {
+    [profil, tentatives, cours] = await Promise.all([
+      env.DB.prepare('SELECT prenom, niveau, maj FROM profils WHERE role = ?1').bind('enfant').first(),
+      env.DB.prepare(
+        `SELECT id, quiz_id, matiere, theme, notion, type, correct, date, enonce, reponse_donnee, bonne_reponse
+         FROM tentatives WHERE joueur = ?1 ORDER BY date DESC LIMIT ?2`
+      ).bind('enfant', LIMITE_SUIVI).all(),
+      env.DB.prepare('SELECT COUNT(*) AS nb FROM cours WHERE joueur = ?1').bind('enfant').first()
+    ]);
+  } catch {
+    return erreur(500, 'Lecture du suivi impossible pour le moment.');
+  }
   return reponseJson(200, { profil: profil ?? null, tentatives: tentatives.results, nbCours: cours?.nb ?? 0 });
 }
 

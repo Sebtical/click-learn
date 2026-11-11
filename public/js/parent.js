@@ -4,6 +4,7 @@
 // ── Réglages ──
 const NB_ERREURS_AFFICHEES = 20;
 const NB_QUIZ_HISTORIQUE = 10;
+const LIMITE_SUIVI_SERVEUR = 5000; // doit rester égal à LIMITE_SUIVI dans worker.js
 const e = echapperHtml; // raccourci de lecture pour les gabarits ci-dessous
 
 // ── Chargement ──
@@ -125,7 +126,8 @@ function afficherSuivi({ profil, tentatives, nbCours }) {
     <div class="card card-wide">
       <h1>👪 Espace parent</h1>
       <p class="subtitle">Suivi de ${e(profil?.prenom || 'ton enfant')}${profil?.niveau ? ` — niveau ${e(profil.niveau)}` : ''}
-        ${derniere ? `<br>Dernière activité : ${dateCourte(derniere)}` : ''}</p>
+        ${derniere ? `<br>Dernière activité : ${dateCourte(derniere)}` : ''}
+        ${total >= LIMITE_SUIVI_SERVEUR ? `<br>Chiffres calculés sur les ${fmtNum(LIMITE_SUIVI_SERVEUR)} dernières réponses.` : ''}</p>
 
       <div class="kpis">
         <div class="kpi"><b>${nbCours}</b><span>Cours ajoutés</span></div>

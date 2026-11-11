@@ -9,8 +9,12 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 
-const SCRIPTS = ['storage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent'];
-const bacASable = vm.createContext({ console, state: { quizzes: [] } });
+const SCRIPTS = ['storage', 'api', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent'];
+const bacASable = vm.createContext({
+  console, setTimeout,
+  state: { quizzes: [] },
+  localStorage: { setItem() {}, getItem() { return null; } } // la sauvegarde est sans effet dans les tests
+});
 for (const nom of SCRIPTS) {
   vm.runInContext(readFileSync(new URL(`../public/js/${nom}.js`, import.meta.url), 'utf8'), bacASable, { filename: `${nom}.js` });
 }
@@ -78,6 +82,66 @@ test('pourcentages arrondis sans erreur de décimales binaires', () => {
   const groupes = appli('regrouper')([{ correct: 1, date: 'a', matiere: 'M' }, { correct: 0, date: 'b', matiere: 'M' }], t => t.matiere);
   // JSON : les objets du bac à sable n'ont pas le même prototype que ceux de Node
   assert.deepEqual(JSON.parse(JSON.stringify(groupes)), [{ cle: 'M', total: 2, justes: 1, derniere: 'b', pct: 50 }]);
+});
+
+// ── Partage avec le serveur (sync.js) ──
+
+// État d'un appareil enfant prêt à partager, avec une première réponse.
+function etatEnfant() {
+  return {
+    role: 'enfant', reprise: 'faite', accessCode: 'x', profile: { prenom: 'T', niveau: '5ème' },
+    attempts: [{ id: 'a1', correct: true, date: 'd' }], lessons: [], quizzes: []
+  };
+}
+
+test('une réponse arrivée pendant un envoi en cours part aussi', async () => {
+  const envois = [];
+  let libererPremierEnvoi;
+  bacASable.fetch = (url, options) => {
+    envois.push(JSON.parse(options.body));
+    if (envois.length === 1) return new Promise(r => { libererPremierEnvoi = () => r({ ok: true }); });
+    return Promise.resolve({ ok: true });
+  };
+  bacASable.state = etatEnfant();
+  const synchroniser = appli('synchroniser');
+
+  const premierEnvoi = synchroniser();
+  bacASable.state.attempts.push({ id: 'a2', correct: false, date: 'd' }); // réponse pendant l'envoi
+  synchroniser();
+  libererPremierEnvoi();
+  await premierEnvoi;
+  await new Promise(r => setImmediate(r));
+
+  assert.equal(envois.length, 2);
+  assert.deepEqual(envois[1].tentatives.map(t => t.id), ['a2']);
+  assert.ok(bacASable.state.attempts.every(a => a.synchro === true));
+});
+
+test('un envoi refusé ne marque rien comme partagé', async () => {
+  bacASable.fetch = () => Promise.resolve({ ok: false });
+  bacASable.state = etatEnfant();
+  await appli('synchroniser')();
+  assert.equal(bacASable.state.attempts[0].synchro, undefined);
+});
+
+test('un appareil parent ou non informé n\'envoie rien', async () => {
+  let appels = 0;
+  bacASable.fetch = () => { appels++; return Promise.resolve({ ok: true }); };
+  bacASable.state = { ...etatEnfant(), role: 'parent1' };
+  await appli('synchroniser')();
+  bacASable.state = { ...etatEnfant(), reprise: null };
+  await appli('synchroniser')();
+  assert.equal(appels, 0);
+  assert.equal(appli('repriseADemander')(), true, 'l\'enfant doit voir l\'écran d\'information, même sans historique');
+});
+
+// ── Lecture des réponses du serveur (api.js) ──
+test('les erreurs du serveur restent lisibles, même sans JSON', async () => {
+  const lireReponse = appli('lireReponse');
+  await assert.rejects(lireReponse(new Response('<html>panne</html>', { status: 500 })), /Erreur HTTP 500/);
+  await assert.rejects(lireReponse(new Response('{"error":{"message":"Code refusé"}}', { status: 401 })), /Code refusé/);
+  await assert.rejects(lireReponse(new Response('pas du json', { status: 200 })), /illisible/);
+  assert.deepEqual(JSON.parse(JSON.stringify(await lireReponse(new Response('{"role":"enfant"}')))), { role: 'enfant' });
 });
 
 // ── Vocabulaire ──

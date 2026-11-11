@@ -1,5 +1,11 @@
+// État de l'appli, sauvegardé dans le navigateur (localStorage), et petits outils communs.
+
+// ── État ──
 const STORAGE_KEY = 'clicklearn:state';
 
+// Forme de l'état. Ajouter un champ ici suffit à mettre à jour les appareils existants (voir loadState).
+// Chaque réponse (attempts) et chaque cours (lessons) peut porter un champ synchro (voir sync.js) :
+// absent = pas encore partagé, true = partagé avec le serveur, 'local' = à garder sur l'appareil.
 const DEFAULT_STATE = {
   profile: { prenom: '', niveau: '5ème' },
   accessCode: '',
@@ -10,9 +16,10 @@ const DEFAULT_STATE = {
   progress: {},
   curriculum: {},
   role: null,
-  reprise: null // null = pas encore demandé, 'faite' = accord donné ou refusé (voir sync.js)
+  reprise: null // null = l'enfant n'a pas encore vu l'écran de partage, 'faite' = vu (voir sync.js)
 };
 
+// Charge l'état sauvegardé en le complétant avec les valeurs par défaut des champs récents.
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return structuredClone(DEFAULT_STATE);
@@ -26,9 +33,12 @@ function loadState() {
   }
 }
 
+// Sauvegarde l'état complet dans le navigateur.
 function saveState(state) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
+
+// ── Outils ──
 
 // Neutralise les caractères spéciaux HTML : à utiliser pour tout texte venant de la base ou de l'IA
 // avant de l'insérer dans la page, sinon un texte piégé pourrait exécuter du code sur un autre appareil.
@@ -37,6 +47,7 @@ function echapperHtml(valeur) {
   return String(valeur ?? '').replace(/[&<>"']/g, c => remplacements[c]);
 }
 
+// Fabrique un identifiant unique (date + hasard), utilisé pour les quiz, questions et réponses.
 function uid() {
   return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 }

@@ -260,6 +260,13 @@ test('les cours et le profil sont enregistrés, le profil mis à jour', async ()
   assert.deepEqual(profils.map(p => ({ ...p })), [{ role: 'enfant', niveau: '4ème' }]);
 });
 
+test('une panne de la base renvoie une erreur propre, sans planter', async () => {
+  const DB = { prepare: () => ({ bind: () => ({}) }), batch: async () => { throw new Error('D1 indisponible'); } };
+  const reponse = await synchroniser({ tentatives: [TENTATIVE] }, { ...ENV, DB });
+  assert.equal(reponse.status, 500);
+  assert.match((await reponse.json()).error.message, /impossible/);
+});
+
 // ── Espace parent : lecture du suivi de l'enfant ──
 
 // Demande le suivi à /api/parent/suivi avec un code donné.

@@ -5,6 +5,7 @@
 // ── Réglages ──
 const TAILLE_LOT_SYNCHRO = 200; // doit rester ≤ TAILLE_MAX_LOT dans worker.js
 let synchroEnCours = false;
+let synchroARelancer = false; // une réponse est arrivée pendant un envoi : relancer à la fin
 
 // ── Contenu des réponses ──
 
@@ -26,29 +27,29 @@ function enrichirTentative(a) {
   return q ? { ...a, enonce: q.enonce, bonneReponse: texteBonneReponse(q) } : a;
 }
 
-// ── Accord pour l'historique ──
+// ── Information de l'enfant et choix pour l'historique ──
 
-// Vrai si l'enfant doit d'abord dire s'il partage l'historique déjà présent sur cet appareil.
+// Vrai si l'enfant n'a pas encore vu l'écran qui l'informe du partage avec ses parents.
 function repriseADemander() {
-  if (state.role !== 'enfant' || state.reprise !== null) return false;
-  if (state.attempts.length || state.lessons.length) return true;
-  state.reprise = 'faite'; // rien d'ancien : on partage directement les prochains résultats
-  saveState(state);
-  return false;
+  return state.role === 'enfant' && state.reprise === null;
 }
 
-// Écran d'accord : l'enfant voit ce qui sera partagé avec ses parents et peut refuser.
+// Écran d'information : l'enfant apprend que ses résultats sont partagés avec ses parents.
+// Il ne choisit que pour l'historique déjà présent sur l'appareil (partager ou garder sur place).
 function renderConfirmReprise() {
+  const aUnHistorique = state.attempts.length > 0 || state.lessons.length > 0;
   app.innerHTML = `
     <div class="card">
-      <h1>👪 Partager tes résultats ?</h1>
-      <p>Tes parents vont pouvoir suivre tes progrès depuis leur téléphone.</p>
-      <p>Il y a déjà <strong>${state.attempts.length}</strong> réponse(s) et <strong>${state.lessons.length}</strong> cours sur cet appareil.
+      <h1>👪 Tes parents suivent tes progrès</h1>
+      <p>À partir de maintenant, tes résultats aux quiz sont partagés avec tes parents : ils peuvent les voir depuis leur téléphone.
         Tes photos ne sont jamais envoyées.</p>
+      ${aUnHistorique ? `
+      <p>Il y a déjà <strong>${state.attempts.length}</strong> réponse(s) et <strong>${state.lessons.length}</strong> cours sur cet appareil. Veux-tu les partager aussi ?</p>
       <div class="actions">
-        <button id="reprise-oui">Oui, partager mon historique</button>
-        <button id="reprise-non" class="secondary">Non, seulement à partir de maintenant</button>
-      </div>
+        <button id="reprise-oui">Oui, partager aussi mon historique</button>
+        <button id="reprise-non" class="secondary">Non, garder mon historique ici</button>
+      </div>` : `
+      <div class="actions"><button id="reprise-oui">J'ai compris</button></div>`}
     </div>`;
 
   document.getElementById('reprise-oui').addEventListener('click', () => {
@@ -57,6 +58,7 @@ function renderConfirmReprise() {
     renderHome();
     synchroniser();
   });
+  if (!aUnHistorique) return;
   document.getElementById('reprise-non').addEventListener('click', () => {
     // L'historique existant reste sur cet appareil : on le marque pour qu'il ne parte jamais
     state.attempts.forEach(a => { a.synchro = 'local'; });
@@ -64,14 +66,17 @@ function renderConfirmReprise() {
     state.reprise = 'faite';
     saveState(state);
     renderHome();
+    synchroniser(); // les éventuels résultats suivants partent, l'historique marqué 'local' reste
   });
 }
 
 // ── Envoi ──
 
 // Envoie au serveur, par lots, tout ce qui n'a pas encore été partagé. Silencieux en cas d'échec.
+// Si un envoi est déjà en cours, on le note et on relance une fois à la fin, pour ne rien laisser en attente.
 async function synchroniser() {
-  if (state.role !== 'enfant' || state.reprise !== 'faite' || synchroEnCours) return;
+  if (state.role !== 'enfant' || state.reprise !== 'faite') return;
+  if (synchroEnCours) { synchroARelancer = true; return; }
   synchroEnCours = true;
   try {
     // Rassemble ce qui reste à envoyer
@@ -88,17 +93,21 @@ async function synchroniser() {
         headers: { 'content-type': 'application/json', 'x-access-code': state.accessCode },
         body: JSON.stringify({
           profil: { prenom: state.profile.prenom, niveau: state.profile.niveau },
-          tentatives: lot.filter(e => e.genre === 'tentative').map(e => enrichirTentative(e.objet)),
-          cours: lot.filter(e => e.genre === 'cours').map(e => e.objet)
+          tentatives: lot.filter(el => el.genre === 'tentative').map(el => enrichirTentative(el.objet)),
+          cours: lot.filter(el => el.genre === 'cours').map(el => el.objet)
         })
       });
       if (!reponse.ok) return; // nouvel essai au prochain résultat ou au prochain démarrage
-      lot.forEach(e => { e.objet.synchro = true; });
+      lot.forEach(el => { el.objet.synchro = true; });
       saveState(state);
     }
   } catch {
     // Hors ligne : nouvel essai plus tard
   } finally {
     synchroEnCours = false;
+    if (synchroARelancer) {
+      synchroARelancer = false;
+      synchroniser();
+    }
   }
 }

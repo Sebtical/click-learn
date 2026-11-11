@@ -2,6 +2,7 @@ let state = loadState();
 
 const app = document.getElementById('app');
 
+// Point d'entrée : configuration au premier lancement, sinon accueil puis vérification du rôle en arrière-plan.
 function render() {
   if (!state.accessCode || !state.profile.prenom) {
     renderSetup();
@@ -11,7 +12,7 @@ function render() {
   }
 }
 
-// Une fois le rôle connu : demande l'accord de partage si besoin (depuis l'accueil seulement), sinon synchronise.
+// Une fois le rôle connu : montre l'écran de partage si besoin (depuis l'accueil seulement), sinon synchronise.
 function apresRole() {
   if (repriseADemander()) {
     if (document.getElementById('edit-config')) renderConfirmReprise();
@@ -39,6 +40,7 @@ async function actualiserRole() {
   }
 }
 
+// Écran de configuration : prénom, niveau et code d'accès.
 function renderSetup() {
   app.innerHTML = `
     <div class="card">
@@ -70,6 +72,7 @@ function renderSetup() {
   document.getElementById('setup-form').addEventListener('submit', onSetupSubmit);
 }
 
+// Vérifie le code auprès du serveur (sans appel payant), enregistre la configuration puis ouvre l'accueil.
 async function onSetupSubmit(e) {
   e.preventDefault();
   const prenom = document.getElementById('prenom').value.trim();
@@ -89,7 +92,7 @@ async function onSetupSubmit(e) {
     state.accessCode = accessCode;
     state.role = role;
     saveState(state);
-    render();
+    renderHome(); // et non render(), qui redemanderait le rôle qu'on vient d'obtenir
     apresRole();
   } catch (err) {
     errorEl.textContent = `Le code d'accès ne fonctionne pas : ${err.message}`;
