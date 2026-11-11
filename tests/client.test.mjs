@@ -49,6 +49,16 @@ test('questions IA : égalité à l\'arrondi au centième', () => {
   assert.equal(estReponseNumJuste('2,29', 2.3), false);
 });
 
+test('le bouton ± ajoute puis retire le signe, et la saisie reste comprise', () => {
+  const basculerSigne = appli('basculerSigne');
+  assert.equal(basculerSigne('8'), '−8');
+  assert.equal(basculerSigne('−8'), '8');
+  assert.equal(basculerSigne('-8'), '8');
+  assert.equal(basculerSigne(''), '−'); // signe d'abord, chiffres ensuite
+  assert.equal(estReponseNumJuste(basculerSigne('8'), -8, true), true);
+  assert.equal(estReponseNumJuste(basculerSigne('') + '12,5', -12.5, true), true);
+});
+
 // ── Fractions ──
 test('toute fraction égale est juste, la simplification est repérée', () => {
   const cas = [

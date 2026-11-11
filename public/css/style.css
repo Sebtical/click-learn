@@ -613,6 +613,14 @@ textarea {
   font-size: 1.1rem;
 }
 
+.num-answer .signe-btn {
+  flex: none;
+  width: 48px;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 1.2rem;
+}
+
 .num-answer .unit {
   font-weight: 800;
   color: var(--ink-2);

@@ -64,6 +64,7 @@ function renderQuizQuestion() {
         <h2>${q.enonce}</h2>
         ${figHtml}
         <div class="num-answer">
+          <button type="button" id="toggle-signe" class="secondary signe-btn" aria-label="Changer le signe">±</button>
           <input type="text" inputmode="decimal" id="num-answer" placeholder="Ta réponse">
           ${q.unit ? `<span class="unit">${q.unit}</span>` : ''}
         </div>
@@ -71,6 +72,12 @@ function renderQuizQuestion() {
         <div id="feedback"></div>
       </div>`;
     document.getElementById('submit-num').addEventListener('click', onNumAnswer);
+    // Bouton ± affiché à toutes les questions numériques, pour ne pas trahir le signe de la réponse
+    document.getElementById('toggle-signe').addEventListener('click', () => {
+      const champ = document.getElementById('num-answer');
+      champ.value = basculerSigne(champ.value);
+      champ.focus();
+    });
   } else if (q.type === 'court') {
     app.innerHTML = `
       <div class="card card-wide">

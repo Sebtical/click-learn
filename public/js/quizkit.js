@@ -61,6 +61,12 @@ function lireNombre(saisie) {
   return m ? Number(m[1]) : NaN;
 }
 
+// Ajoute ou retire le signe moins devant une saisie (bouton ± : le clavier chiffres de l'iPhone n'a pas de touche moins).
+function basculerSigne(saisie) {
+  const s = String(saisie).trim();
+  return /^[-−]/.test(s) ? s.slice(1) : '−' + s;
+}
+
 // Vrai si la saisie vaut la réponse attendue. Questions locales (exacte) : égalité stricte,
 // car leurs réponses sont des décimaux exacts. Questions IA : égalité à l'arrondi au centième près.
 function estReponseNumJuste(saisie, attendu, exacte = false) {
