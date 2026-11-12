@@ -124,41 +124,60 @@ function masteryBadge(pct) {
   return `<span class="mastery-pill" style="background:hsl(${hue} 70% 90%); color:hsl(${hue} 70% 28%); border-color:hsl(${hue} 70% 65%)">${pct}%</span>`;
 }
 
+// Accueil : salutation, carte de niveau, matières en cartes illustrées, puis les actions photo.
 function renderHome() {
+  const points = state.attempts.filter(a => a.correct).length;
+  const n = niveauDepuisPoints(points);
+
+  // Une carte par matière, avec son illustration (ou son emoji tant que l'image n'est pas fournie)
   const subjectCards = state.subjects.map(s => `
-    <button class="subject-card" data-subject="${s}">
-      <span class="icon">${SUBJECT_ICONS[s] || '📘'}</span>
-      ${s}
+    <button class="subject-card" data-subject="${echapperHtml(s)}">
+      <span class="subject-art">${illustration(s, `<span class="emoji">${SUBJECT_ICONS[s] || '📘'}</span>`)}</span>
+      <span class="subject-name">${echapperHtml(s)}</span>
+      <span class="go" aria-hidden="true">↗</span>
     </button>`).join('');
 
-  const points = state.attempts.filter(a => a.correct).length;
-
   app.innerHTML = `
-    <div class="card card-wide">
-      <div class="topbar">
-        <span class="pill star">⭐ ${points} pts</span>
-        <span class="sp"></span>
-      </div>
-      <div class="hello">
-        ${mascotSVG(72)}
+    <div class="card card-wide home">
+      <header class="home-head">
+        <div class="avatar">${illustration('avatar', mascotSVG(56))}</div>
         <div>
-          <h1>Salut ${state.profile.prenom} 👋</h1>
-          <p class="subtitle">Prêt(e) à réviser un peu ? Choisis une matière pour un quiz basé sur ton programme de ${state.profile.niveau}.</p>
+          <h1>Salut ${echapperHtml(state.profile.prenom)} 👋</h1>
+          <p class="subtitle">⭐ ${points} point${points > 1 ? 's' : ''} · ${echapperHtml(state.profile.niveau)}</p>
         </div>
-      </div>
+      </header>
+
+      <section class="level-card">
+        <div class="level-text">
+          <h2>Niveau ${n.niveau}</h2>
+          <p>Encore ${n.reste} bonne${n.reste > 1 ? 's' : ''} réponse${n.reste > 1 ? 's' : ''} pour le niveau ${n.niveau + 1}</p>
+        </div>
+        <div class="level-art">${illustration('trophee', '<span class="emoji">🏆</span>')}</div>
+        <div class="level-bar" role="progressbar" aria-label="Progression vers le niveau suivant" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${n.pct}">
+          <span style="width:${n.pct}%"></span>
+        </div>
+      </section>
+
+      <h2 class="section-title">Tes matières</h2>
       <div class="subject-grid">${subjectCards}</div>
 
-      <div class="divider">ou pars d'un cours précis</div>
-      <div class="actions">
-        <button id="capture-btn">📷 Ajouter un cours</button>
-        <button id="exercise-btn">📸 Corriger un exercice</button>
-        ${state.lessons.length ? `<button id="lessons-btn" class="secondary">📚 Mes cours (${state.lessons.length})</button>` : ''}
+      <h2 class="section-title">Pars d'un cours précis</h2>
+      <div class="action-cards">
+        <button id="capture-btn" class="action-card">
+          <span class="action-art">${illustration('photo', '<span class="emoji">📷</span>')}</span>
+          <span><strong>Ajouter un cours</strong><small>Prends ta leçon en photo, je prépare un quiz.</small></span>
+        </button>
+        <button id="exercise-btn" class="action-card">
+          <span class="action-art"><span class="emoji">📸</span></span>
+          <span><strong>Corriger un exercice</strong><small>Photo de ton exercice, je t'explique tes erreurs.</small></span>
+        </button>
       </div>
-      <button id="edit-config" class="link">Modifier la configuration</button>
+      ${state.lessons.length ? `<button id="lessons-btn" class="secondary wide">📚 Mes cours (${state.lessons.length})</button>` : ''}
 
-      ${estParent() ? `<div class="foot-parent">
-        <button id="parent-link" class="link">👪 Espace parent</button>
-      </div>` : ''}
+      <div class="home-foot">
+        <button id="edit-config" class="link">Modifier la configuration</button>
+        ${estParent() ? '<button id="parent-link" class="link">👪 Espace parent</button>' : ''}
+      </div>
     </div>
   `;
 
@@ -226,6 +245,15 @@ async function onGenerateProgramQuiz(subject, difficultyId, difficultyLabel, btn
   }
 }
 
+// Ligne de la liste des chapitres : numéro, titre (échappé : il peut venir de l'IA) et anneau de maîtrise.
+function chapitreLi(i, titre, pct) {
+  return `
+    <li data-i="${i}">
+      <span class="chap-text"><span class="chap-num">Chapitre ${i + 1}</span><strong>${echapperHtml(titre)}</strong></span>
+      ${anneauMaitrise(pct)}
+    </li>`;
+}
+
 async function renderSubjectProgram(subject) {
   if (isLocalSubject(subject)) {
     renderLocalSubjectProgram(subject);
@@ -264,12 +292,7 @@ async function renderSubjectProgram(subject) {
   }
 
   const chapters = state.curriculum[subject];
-  const items = chapters.map((c, i) => `
-    <li data-i="${i}">
-      <strong>${c.titre}</strong>
-      ${masteryBadge(chapterMasteryPct(subject, c.titre))}
-      <span class="date">Chapitre ${i + 1}</span>
-    </li>`).join('');
+  const items = chapters.map((c, i) => chapitreLi(i, c.titre, chapterMasteryPct(subject, c.titre))).join('');
 
   app.innerHTML = `
     <div class="card card-wide">
@@ -278,7 +301,7 @@ async function renderSubjectProgram(subject) {
       <div class="actions">
         <button id="surprise-btn" class="secondary">🎲 Quiz surprise</button>
       </div>
-      <ul class="lesson-list">${items}</ul>
+      <ul class="lesson-list chapter-list">${items}</ul>
       <button id="back-home" class="secondary">Retour à l'accueil</button>
     </div>
   `;
@@ -345,12 +368,7 @@ async function onGenerateChapterQuiz(subject, chapter, difficultyId, difficultyL
 
 function renderLocalSubjectProgram(subject) {
   const themes = localThemes(subject);
-  const items = themes.map((c, i) => `
-    <li data-i="${i}">
-      <strong>${c.titre}</strong>
-      ${masteryBadge(chapterMasteryPct(subject, c.id))}
-      <span class="date">Chapitre ${i + 1}</span>
-    </li>`).join('');
+  const items = themes.map((c, i) => chapitreLi(i, c.titre, chapterMasteryPct(subject, c.id))).join('');
 
   app.innerHTML = `
     <div class="card card-wide">
@@ -359,7 +377,7 @@ function renderLocalSubjectProgram(subject) {
       <div class="actions">
         <button id="surprise-btn" class="secondary">🎲 Quiz surprise</button>
       </div>
-      <ul class="lesson-list">${items}</ul>
+      <ul class="lesson-list chapter-list">${items}</ul>
       <button id="back-home" class="secondary">Retour à l'accueil</button>
     </div>
   `;
@@ -597,8 +615,8 @@ function renderLessonPreview(extracted, imageDataUrls) {
 function renderLessonsList() {
   const items = [...state.lessons].reverse().map(l => `
     <li data-id="${l.id}">
-      <strong>${l.titre}</strong>
-      <span class="tag">${l.matiere}</span>
+      <strong>${echapperHtml(l.titre)}</strong>
+      <span class="tag">${echapperHtml(l.matiere)}</span>
       <span class="date">${new Date(l.date).toLocaleDateString('fr-FR')}</span>
     </li>`).join('');
 

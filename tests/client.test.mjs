@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 
-const SCRIPTS = ['storage', 'api', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent'];
+const SCRIPTS = ['storage', 'api', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent'];
 const bacASable = vm.createContext({
   console, setTimeout,
   state: { quizzes: [] },
@@ -251,4 +251,32 @@ test('un quiz surprise garde le thème de chaque question', () => {
   const questions = appli('generateLocalQuiz')('Maths', null, 'normal', 50);
   const themes = Object.keys(appli('G_MATHS'));
   assert.ok(questions.every(q => themes.includes(q.theme)));
+});
+
+// ── Habillage : niveaux, anneau de maîtrise, illustrations ──
+test('un niveau tous les 50 points, avec le reste à faire', () => {
+  const niveau = appli('niveauDepuisPoints');
+  assert.deepEqual({ ...niveau(0) }, { niveau: 1, reste: 50, pct: 0 });
+  assert.deepEqual({ ...niveau(49) }, { niveau: 1, reste: 1, pct: 98 });
+  assert.deepEqual({ ...niveau(50) }, { niveau: 2, reste: 50, pct: 0 });
+  assert.deepEqual({ ...niveau(125) }, { niveau: 3, reste: 25, pct: 50 });
+  assert.deepEqual({ ...niveau(-3) }, { niveau: 1, reste: 50, pct: 0 }); // valeur absurde : on repart de zéro
+  assert.deepEqual({ ...niveau(undefined) }, { niveau: 1, reste: 50, pct: 0 });
+});
+
+test('l\'anneau de maîtrise borne le pourcentage et signale un chapitre non testé', () => {
+  const anneau = appli('anneauMaitrise');
+  assert.match(anneau(null), /Pas encore testé/);
+  assert.match(anneau(73), /--p:73;/);
+  assert.match(anneau(140), /--p:100;/);
+  assert.match(anneau(-5), /--p:0;/);
+});
+
+test('une illustration absente affiche le repli, jamais une image cassée', () => {
+  const illustration = appli('illustration');
+  assert.equal(illustration('Maths', '🔢'), '🔢');
+  assert.equal(illustration('inconnue', 'X'), 'X');
+  vm.runInContext("ILLUSTRATIONS.Maths = 'img/maths.webp'", bacASable);
+  assert.match(illustration('Maths', '🔢'), /<img class="illu" src="img\/maths\.webp" alt=""/);
+  vm.runInContext('ILLUSTRATIONS.Maths = null', bacASable);
 });
