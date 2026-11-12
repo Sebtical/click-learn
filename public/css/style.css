@@ -572,17 +572,30 @@ button.avatar {
 }
 
 /* Avec bannière : l'image remplit la carte, un voile violet à gauche garde le texte blanc lisible */
-.level-card.avec-banniere {
-  min-height: 170px;
-  align-content: end;
-  background:
-    linear-gradient(90deg, rgba(60, 60, 170, .92) 0%, rgba(60, 60, 170, .8) 40%, rgba(60, 60, 170, 0) 70%),
-    var(--banniere) 75% center / cover no-repeat,
-    var(--brand);
+.level-card { isolation: isolate; overflow: hidden; }
+
+.level-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 70% 30%;
+  z-index: -2;
 }
 
-.level-card.avec-banniere .level-art { display: none; }
-.level-card.avec-banniere .level-text { max-width: 58%; }
+.level-card:has(.level-bg) { min-height: 170px; align-content: end; }
+
+.level-card:has(.level-bg)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, rgba(60, 60, 170, .94) 0%, rgba(60, 60, 170, .8) 40%, rgba(60, 60, 170, 0) 72%);
+}
+
+.level-card:has(.level-bg) .level-art { display: none; }
+.level-card:has(.level-bg) .level-text { max-width: 58%; }
 
 .level-card h2 {
   margin: 0;
@@ -641,8 +654,7 @@ button.avatar {
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px;
-  min-height: 132px;
+  padding: 8px 8px 12px;
   border-radius: 22px;
   background: linear-gradient(160deg, var(--tint), var(--card) 130%);
   color: var(--ink);
@@ -662,26 +674,29 @@ button.avatar {
 .subject-card:nth-child(6n+6) { --tint: #FFF0C7; }
 
 .subject-art {
-  width: 64px;
-  height: 64px;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 16px;
+  overflow: hidden;
   display: grid;
   place-items: center;
+  background: rgba(255, 255, 255, .55);
 }
 
-.subject-art .illu { width: 100%; height: 100%; object-fit: contain; }
+.subject-art .illu { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
 .subject-art .emoji, .action-art .emoji { font-size: 2.2rem; }
 
 .subject-name {
   line-height: 1.2;
-  padding-right: 30px;
+  padding: 0 6px;
 }
 
 .go {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 32px;
-  height: 32px;
+  top: 14px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -726,8 +741,8 @@ button.avatar {
 
 .action-art {
   flex: none;
-  width: 52px;
-  height: 52px;
+  width: 64px;
+  height: 64px;
   border-radius: 16px;
   background: var(--card);
   display: grid;
@@ -735,7 +750,48 @@ button.avatar {
   overflow: hidden;
 }
 
-.action-art .illu { width: 100%; height: 100%; object-fit: contain; }
+.action-art .illu { width: 100%; height: 100%; object-fit: cover; object-position: center 20%; }
+
+/* ── En-tête des fiches : titre à gauche, vignette inclinée à droite ── */
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.page-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-head h1 { margin: 0 0 6px; }
+.page-head .subtitle { margin: 0; }
+
+.page-art {
+  flex: none;
+  width: 96px;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  object-position: center 20%;
+  border-radius: 20px;
+  border: 3px solid var(--card);
+  box-shadow: var(--shadow-sm);
+  transform: rotate(3deg);
+}
+
+@media (min-width: 480px) {
+  .page-art { width: 120px; }
+}
+
+/* Trophée du résultat d'un quiz réussi */
+.result-art {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 20px;
+  box-shadow: var(--shadow-sm);
+}
 
 .home-foot {
   margin-top: 18px;

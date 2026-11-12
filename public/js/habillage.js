@@ -5,18 +5,29 @@
 // Chemin de chaque image dans public/img/. Une entrée à null affiche le repli (emoji ou mascotte) :
 // on renseigne le chemin seulement quand le fichier existe, pour ne jamais afficher d'image cassée.
 const ILLUSTRATIONS = {
-  avatar: null,
-  banniere: null, // scène large (16:9) affichée en fond de la carte de niveau
-  trophee: null,
-  photo: null,
-  exercice: null,
-  'Maths': null,
-  'Français': null,
-  'Histoire-Géographie': null,
-  'SVT': null,
-  'Anglais': null,
-  'Physique-Chimie': null,
-  'Technologie': null
+  avatar: null, // l'avatar personnel de l'enfant n'est jamais ici (voir « Avatar personnel » plus bas)
+  banniere: 'img/banniere.webp', // fond de la carte de niveau
+  trophee: 'img/trophee.webp',
+  photo: 'img/photo.webp',
+  exercice: 'img/exercice.webp',
+  'Maths': 'img/maths.webp',
+  'Français': 'img/francais.webp',
+  'Histoire-Géographie': 'img/histoire-geo.webp',
+  'SVT': 'img/svt.webp',
+  'Anglais': 'img/anglais.webp',
+  'Physique-Chimie': 'img/physique-chimie.webp',
+  'Technologie': 'img/technologie.webp'
+};
+
+// Emoji de chaque matière : sert de repli quand une matière n'a pas (encore) d'illustration.
+const SUBJECT_ICONS = {
+  'Maths': '🔢',
+  'Français': '📖',
+  'Histoire-Géographie': '🌍',
+  'SVT': '🌱',
+  'Anglais': '🇬🇧',
+  'Physique-Chimie': '⚗️',
+  'Technologie': '💻'
 };
 
 // Renvoie la balise <img> de l'illustration demandée, ou le HTML de repli si elle n'est pas encore fournie.
@@ -25,10 +36,28 @@ function illustration(cle, repli) {
   return src ? `<img class="illu" src="${src}" alt="" loading="lazy">` : repli;
 }
 
-// Attributs de la carte de niveau : classe et image de fond si la bannière est fournie, rien sinon.
-function attributsBanniere() {
+// Image de fond de la carte de niveau si la bannière est fournie, rien sinon (la carte reste alors violette).
+function banniereHtml() {
   const src = ILLUSTRATIONS.banniere;
-  return src ? ` avec-banniere" style="--banniere:url('${src}')` : '';
+  return src ? `<img class="level-bg" src="${src}" alt="">` : '';
+}
+
+// Titre d'une matière : nom seul si elle a son illustration, sinon précédé de son emoji.
+function titreMatiere(matiere) {
+  return ILLUSTRATIONS[matiere] ? echapperHtml(matiere) : `${SUBJECT_ICONS[matiere] || '📘'} ${echapperHtml(matiere)}`;
+}
+
+// En-tête d'une fiche : titre et sous-titre à gauche, vignette illustrée à droite si elle existe.
+// titreHtml et sousTitreHtml doivent déjà être échappés par l'appelant.
+function enTete(titreHtml, sousTitreHtml, cleImage) {
+  const src = ILLUSTRATIONS[cleImage];
+  return `<header class="page-head">
+      <div class="page-head-text">
+        <h1>${titreHtml}</h1>
+        ${sousTitreHtml ? `<p class="subtitle">${sousTitreHtml}</p>` : ''}
+      </div>
+      ${src ? `<img class="page-art" src="${src}" alt="" loading="lazy">` : ''}
+    </header>`;
 }
 
 // ── Avatar personnel ──

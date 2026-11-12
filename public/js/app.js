@@ -174,16 +174,6 @@ function reduireImageCarree(fichier) {
   });
 }
 
-const SUBJECT_ICONS = {
-  'Maths': '🔢',
-  'Français': '📖',
-  'Histoire-Géographie': '🌍',
-  'SVT': '🌱',
-  'Anglais': '🇬🇧',
-  'Physique-Chimie': '⚗️',
-  'Technologie': '💻'
-};
-
 function chapterMasteryPct(subject, themeKey) {
   const relevant = state.attempts.filter(a => a.subject === subject && a.theme === themeKey);
   if (relevant.length === 0) return null;
@@ -221,7 +211,8 @@ function renderHome() {
         </div>
       </header>
 
-      <section class="level-card${attributsBanniere()}">
+      <section class="level-card">
+        ${banniereHtml()}
         <div class="level-text">
           <h2>Niveau ${n.niveau}</h2>
           <p>Encore ${n.reste} bonne${n.reste > 1 ? 's' : ''} réponse${n.reste > 1 ? 's' : ''} pour le niveau ${n.niveau + 1}</p>
@@ -275,7 +266,7 @@ function renderHome() {
 function renderSubjectQuizSetup(subject) {
   app.innerHTML = `
     <div class="card card-wide">
-      <h1>${SUBJECT_ICONS[subject] || '📘'} ${subject}</h1>
+      <h1>${titreMatiere(subject)}</h1>
       <p>Quiz surprise basé sur le programme de ${state.profile.niveau}, choisis ton niveau :</p>
       <div class="actions" id="difficulty-choice">
         ${DIFFICULTIES.map(d => `<button class="difficulty-btn" data-id="${d.id}" data-label="${d.label}">${d.label}</button>`).join('')}
@@ -333,7 +324,7 @@ async function renderSubjectProgram(subject) {
   if (!state.curriculum[subject]) {
     app.innerHTML = `
       <div class="card card-wide">
-        <h1>${SUBJECT_ICONS[subject] || '📘'} ${subject}</h1>
+        <h1>${titreMatiere(subject)}</h1>
         <div class="busy">
           <p>Je prépare le programme de ${state.profile.niveau}...</p>
         </div>
@@ -351,7 +342,7 @@ async function renderSubjectProgram(subject) {
     } catch (err) {
       app.innerHTML = `
         <div class="card card-wide">
-          <h1>${SUBJECT_ICONS[subject] || '📘'} ${subject}</h1>
+          <h1>${titreMatiere(subject)}</h1>
           <p class="error">Erreur : ${echapperHtml(err.message)}</p>
           <button id="back-home" class="secondary">Retour à l'accueil</button>
         </div>
@@ -366,8 +357,7 @@ async function renderSubjectProgram(subject) {
 
   app.innerHTML = `
     <div class="card card-wide">
-      <h1>${SUBJECT_ICONS[subject] || '📘'} ${subject}</h1>
-      <p class="subtitle">Programme de ${state.profile.niveau}, chapitre par chapitre.</p>
+      ${enTete(titreMatiere(subject), `Programme de ${echapperHtml(state.profile.niveau)}, chapitre par chapitre.`, subject)}
       <div class="actions">
         <button id="surprise-btn" class="secondary">🎲 Quiz surprise</button>
       </div>
@@ -386,8 +376,7 @@ async function renderSubjectProgram(subject) {
 function renderChapterQuizSetup(subject, chapter) {
   app.innerHTML = `
     <div class="card card-wide">
-      <h1>${echapperHtml(chapter.titre)}</h1>
-      <p class="tag">${subject}</p>
+      ${enTete(echapperHtml(chapter.titre), `<span class="tag">${echapperHtml(subject)}</span>`, subject)}
       <p>${echapperHtml(chapter.resume)}</p>
       <p><strong>Notions :</strong> ${echapperHtml(chapter.notions.join(', '))}</p>
       <h2>Générer un parcours de révision</h2>
@@ -442,8 +431,7 @@ function renderLocalSubjectProgram(subject) {
 
   app.innerHTML = `
     <div class="card card-wide">
-      <h1>${SUBJECT_ICONS[subject] || '📘'} ${subject}</h1>
-      <p class="subtitle">Programme de ${state.profile.niveau}, chapitre par chapitre.</p>
+      ${enTete(titreMatiere(subject), `Programme de ${echapperHtml(state.profile.niveau)}, chapitre par chapitre.`, subject)}
       <div class="actions">
         <button id="surprise-btn" class="secondary">🎲 Quiz surprise</button>
       </div>
@@ -462,8 +450,7 @@ function renderLocalSubjectProgram(subject) {
 function renderLocalChapterQuizSetup(subject, theme) {
   app.innerHTML = `
     <div class="card card-wide">
-      <h1>${theme.titre}</h1>
-      <p class="tag">${subject}</p>
+      ${enTete(theme.titre, `<span class="tag">${echapperHtml(subject)}</span>`, subject)}
       <p>${theme.resume}</p>
       <p><strong>Notions :</strong> ${theme.notions.join(', ')}</p>
       <div class="actions">
@@ -506,7 +493,7 @@ function renderLessonContent(subject, theme) {
 function renderLocalQuizSetup(subject, themeId) {
   app.innerHTML = `
     <div class="card card-wide">
-      <h1>${SUBJECT_ICONS[subject] || '📘'} ${subject}</h1>
+      <h1>${titreMatiere(subject)}</h1>
       <p>Quiz surprise sur tout le programme vu, choisis ton niveau :</p>
       <div class="actions" id="difficulty-choice">
         ${DIFFICULTIES.map(d => `<button class="difficulty-btn" data-id="${d.id}">${d.label}</button>`).join('')}
@@ -583,7 +570,7 @@ function renderCaptureLesson() {
   lessonPreviewUrls = [];
   app.innerHTML = `
     <div class="card card-wide">
-      <h1>Photographier un cours</h1>
+      ${enTete('Photographier un cours', '', 'photo')}
       <p>Prends une photo, puis retape sur le bouton pour en ajouter d'autres si besoin (une page à la fois).</p>
       <input type="file" accept="image/*" capture="environment" multiple id="lesson-photo">
       <div id="preview" class="thumb-row"></div>
@@ -769,7 +756,7 @@ function renderExerciseCapture() {
   exercisePreviewUrls = [];
   app.innerHTML = `
     <div class="card card-wide">
-      <h1>Corriger un exercice</h1>
+      ${enTete('Corriger un exercice', '', 'exercice')}
       <p>Prends une photo, puis retape sur le bouton pour en ajouter d'autres si besoin (une page à la fois).</p>
       <input type="file" accept="image/*" capture="environment" multiple id="exercise-photo">
       <div id="preview" class="thumb-row"></div>

@@ -274,14 +274,32 @@ test('l\'anneau de maîtrise borne le pourcentage et signale un chapitre non tes
 
 test('une illustration absente affiche le repli, jamais une image cassée', () => {
   const illustration = appli('illustration');
-  assert.equal(illustration('Maths', '🔢'), '🔢');
+  assert.match(illustration('Maths', '🔢'), /<img class="illu" src="img\/maths\.webp" alt=""/);
   assert.equal(illustration('inconnue', 'X'), 'X');
-  vm.runInContext("ILLUSTRATIONS.Maths = 'img/maths.webp'", bacASable);
+  vm.runInContext('ILLUSTRATIONS.Maths = null', bacASable);
   try {
-    assert.match(illustration('Maths', '🔢'), /<img class="illu" src="img\/maths\.webp" alt=""/);
+    assert.equal(illustration('Maths', '🔢'), '🔢');
   } finally {
-    vm.runInContext('ILLUSTRATIONS.Maths = null', bacASable); // ne pas polluer les tests suivants
+    vm.runInContext("ILLUSTRATIONS.Maths = 'img/maths.webp'", bacASable); // ne pas polluer les tests suivants
   }
+});
+
+test('chaque illustration déclarée existe bien dans public/img', () => {
+  const chemins = Object.values(vm.runInContext('ILLUSTRATIONS', bacASable)).filter(Boolean);
+  assert.ok(chemins.length >= 11);
+  for (const chemin of chemins) {
+    assert.match(chemin, /^img\/[a-z-]+\.webp$/);
+    assert.ok(readFileSync(new URL(`../public/${chemin}`, import.meta.url)).length > 0, chemin);
+  }
+});
+
+test("l'en-tête d'une fiche montre la vignette si elle existe, et le titre d'une matière perd son emoji", () => {
+  const enTete = appli('enTete');
+  assert.match(enTete('Maths', 'Programme', 'Maths'), /<img class="page-art" src="img\/maths\.webp"/);
+  assert.ok(!enTete('Mes cours', '', 'inconnue').includes('<img'));
+  assert.ok(!enTete('Mes cours', '', 'inconnue').includes('subtitle'));
+  assert.equal(appli('titreMatiere')('Maths'), 'Maths');
+  assert.equal(appli('titreMatiere')('Musique'), '📘 Musique'); // matière sans image : emoji de repli
 });
 
 test("un titre de chapitre venu de l'IA est échappé dans la liste", () => {
@@ -291,14 +309,13 @@ test("un titre de chapitre venu de l'IA est échappé dans la liste", () => {
 });
 
 test('la carte de niveau ne prend une image de fond que si la bannière est fournie', () => {
-  const attributs = appli('attributsBanniere');
-  assert.equal(attributs(), '');
-  vm.runInContext("ILLUSTRATIONS.banniere = 'img/banniere.webp'", bacASable);
+  const banniere = appli('banniereHtml');
+  assert.equal(banniere(), '<img class="level-bg" src="img/banniere.webp" alt="">');
+  vm.runInContext('ILLUSTRATIONS.banniere = null', bacASable);
   try {
-    const html = `<section class="level-card${attributs()}">`;
-    assert.equal(html, `<section class="level-card avec-banniere" style="--banniere:url('img/banniere.webp')">`);
+    assert.equal(banniere(), '');
   } finally {
-    vm.runInContext('ILLUSTRATIONS.banniere = null', bacASable);
+    vm.runInContext("ILLUSTRATIONS.banniere = 'img/banniere.webp'", bacASable);
   }
 });
 
