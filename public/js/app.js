@@ -101,6 +101,73 @@ async function onSetupSubmit(e) {
   }
 }
 
+// ── Avatar ──
+
+// Écran de choix de l'avatar : photo prise dans la galerie, recadrée, réduite et gardée sur l'appareil.
+function renderAvatar() {
+  app.innerHTML = `
+    <div class="card">
+      <h1>Mon avatar</h1>
+      <div class="avatar avatar-grand">${avatarHtml(state.avatar, mascotSVG(110))}</div>
+      <p class="subtitle">Choisis une image dans ta galerie. Elle reste sur ce téléphone : elle n'est jamais envoyée.</p>
+      <label class="file-btn">
+        <input type="file" id="avatar-file" accept="image/*">
+        <span>🖼️ Choisir une image</span>
+      </label>
+      <p id="avatar-error" class="error"></p>
+      <div class="actions">
+        ${state.avatar ? '<button id="avatar-remove" class="secondary">Retirer mon avatar</button>' : ''}
+        <button id="back-home" class="secondary">Retour à l'accueil</button>
+      </div>
+    </div>
+  `;
+
+  // Nouvelle image : réduction puis sauvegarde ; en cas d'échec, on garde l'ancien avatar
+  document.getElementById('avatar-file').addEventListener('change', async e => {
+    const fichier = e.target.files[0];
+    if (!fichier) return;
+    const ancien = state.avatar;
+    try {
+      state.avatar = await reduireImageCarree(fichier);
+      saveState(state);
+      renderAvatar();
+    } catch {
+      state.avatar = ancien;
+      document.getElementById('avatar-error').textContent =
+        "Impossible d'utiliser cette image. Essaie avec une autre photo (JPEG ou PNG).";
+    }
+  });
+
+  // Retrait de l'avatar : retour à la mascotte
+  const retirer = document.getElementById('avatar-remove');
+  if (retirer) retirer.addEventListener('click', () => {
+    state.avatar = null;
+    saveState(state);
+    renderAvatar();
+  });
+  document.getElementById('back-home').addEventListener('click', renderHome);
+}
+
+// Lit une image, la recadre en carré centré et la réduit à TAILLE_AVATAR px ; renvoie un JPEG encodé.
+function reduireImageCarree(fichier) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(fichier);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const { sx, sy, cote } = cadrageCarre(img.naturalWidth, img.naturalHeight);
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = TAILLE_AVATAR;
+      canvas.getContext('2d').drawImage(img, sx, sy, cote, cote, 0, 0, TAILLE_AVATAR, TAILLE_AVATAR);
+      const resultat = canvas.toDataURL('image/jpeg', 0.85);
+      if (estAvatarValide(resultat)) resolve(resultat);
+      else reject(new Error('image trop lourde ou illisible'));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image illisible')); };
+    img.src = url;
+  });
+}
+
 const SUBJECT_ICONS = {
   'Maths': '🔢',
   'Français': '📖',
@@ -141,7 +208,7 @@ function renderHome() {
   app.innerHTML = `
     <div class="card card-wide home">
       <header class="home-head">
-        <div class="avatar">${illustration('avatar', mascotSVG(56))}</div>
+        <button id="avatar-btn" class="avatar" aria-label="Changer mon avatar">${avatarHtml(state.avatar, illustration('avatar', mascotSVG(56)))}</button>
         <div>
           <h1>Salut ${echapperHtml(state.profile.prenom)} 👋</h1>
           <p class="subtitle">⭐ ${points} point${points > 1 ? 's' : ''} · ${echapperHtml(state.profile.niveau)}</p>
@@ -186,6 +253,7 @@ function renderHome() {
   `;
 
   // Branchement des boutons
+  document.getElementById('avatar-btn').addEventListener('click', renderAvatar);
   document.querySelectorAll('.subject-card').forEach(btn => {
     btn.addEventListener('click', () => renderSubjectProgram(btn.dataset.subject));
   });

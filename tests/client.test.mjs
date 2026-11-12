@@ -301,3 +301,32 @@ test('la carte de niveau ne prend une image de fond que si la bannière est four
     vm.runInContext('ILLUSTRATIONS.banniere = null', bacASable);
   }
 });
+
+// ── Avatar personnel (gardé sur l'appareil) ──
+test("seule une image JPEG encodée par l'appli est acceptée comme avatar", () => {
+  const valide = appli('estAvatarValide');
+  assert.equal(valide('data:image/jpeg;base64,/9j/4AAQSkZJRg=='), true);
+  assert.equal(valide(null), false);
+  assert.equal(valide('https://exemple.com/a.jpg'), false); // jamais d'image distante
+  assert.equal(valide('data:image/jpeg;base64,abc" onerror="alert(1)'), false); // pas de sortie de l'attribut
+  assert.equal(valide('data:image/svg+xml;base64,PHN2Zz4='), false); // un SVG peut contenir du script
+  assert.equal(valide('data:image/jpeg;base64,' + 'A'.repeat(200000)), false); // trop lourd
+  assert.match(appli('avatarHtml')('data:image/jpeg;base64,/9j/', 'X'), /<img class="illu" src="data:image\/jpeg/);
+  assert.equal(appli('avatarHtml')('pas une image', 'X'), 'X');
+});
+
+test('le recadrage garde le plus grand carré centré', () => {
+  const cadrage = appli('cadrageCarre');
+  assert.deepEqual({ ...cadrage(1000, 600) }, { sx: 200, sy: 0, cote: 600 });
+  assert.deepEqual({ ...cadrage(600, 1001) }, { sx: 0, sy: 200, cote: 600 });
+  assert.deepEqual({ ...cadrage(500, 500) }, { sx: 0, sy: 0, cote: 500 });
+});
+
+test("l'avatar n'est jamais envoyé au serveur", async () => {
+  const corps = [];
+  bacASable.fetch = (url, options) => { corps.push(options.body); return Promise.resolve(new Response('{"recus":1,"ignores":0}')); };
+  bacASable.state = { ...etatEnfant(), avatar: 'data:image/jpeg;base64,/9j/SECRETAVATAR' };
+  await appli('synchroniser')();
+  assert.ok(corps.length > 0, 'un envoi devait partir');
+  assert.ok(corps.every(c => !c.includes('SECRETAVATAR') && !c.includes('data:image')));
+});

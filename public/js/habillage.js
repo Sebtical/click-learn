@@ -31,6 +31,29 @@ function attributsBanniere() {
   return src ? ` avec-banniere" style="--banniere:url('${src}')` : '';
 }
 
+// ── Avatar personnel ──
+// L'avatar choisi par l'enfant reste sur son appareil (state.avatar) : il n'est ni dans public/, ni envoyé au serveur.
+const TAILLE_AVATAR = 256;           // côté du carré enregistré, en pixels
+const POIDS_MAX_AVATAR = 200000;     // garde-fou en caractères (~150 Ko) pour ne pas saturer le stockage du navigateur
+
+// Vrai seulement pour une image JPEG encodée telle que l'appli la produit : rien d'autre n'entre dans la page.
+function estAvatarValide(valeur) {
+  return typeof valeur === 'string'
+    && valeur.length < POIDS_MAX_AVATAR
+    && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(valeur);
+}
+
+// Affiche l'avatar personnel s'il est valide, sinon le repli (illustration ou mascotte).
+function avatarHtml(avatar, repli) {
+  return estAvatarValide(avatar) ? `<img class="illu" src="${avatar}" alt="Mon avatar">` : repli;
+}
+
+// Calcule le plus grand carré centré dans une image (largeur × hauteur), pour recadrer sans déformer.
+function cadrageCarre(largeur, hauteur) {
+  const cote = Math.min(largeur, hauteur);
+  return { sx: Math.floor((largeur - cote) / 2), sy: Math.floor((hauteur - cote) / 2), cote };
+}
+
 // ── Niveaux ──
 const POINTS_PAR_NIVEAU = 50; // 1 point = 1 bonne réponse ; règle validée par Seb le 2026-11-12
 

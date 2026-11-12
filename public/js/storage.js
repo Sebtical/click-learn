@@ -16,6 +16,7 @@ const DEFAULT_STATE = {
   progress: {},
   curriculum: {},
   role: null,
+  avatar: null, // photo d'avatar (JPEG réduit) gardée sur cet appareil uniquement : jamais synchronisée
   reprise: null // null = l'enfant n'a pas encore vu l'écran de partage, 'faite' = vu (voir sync.js)
 };
 
