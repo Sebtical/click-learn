@@ -35,7 +35,7 @@ Single-page app with no framework: `app.js` holds a global `state` object (loade
 
 **Parent space** (`parent.js`): loads `/api/parent/suivi` and shows mastery per chapter, weak notions, the latest wrong answers (statement, answer given, correct answer) and recent quizzes. **Hard rule: every text coming from the database or from the AI goes through `echapperHtml` (`storage.js`) before being inserted with `innerHTML`.**
 
-**State shape**: `DEFAULT_STATE` in `storage.js` — `profile`, `accessCode`, `subjects`, `lessons`, `quizzes`, `attempts`, `progress`, `curriculum`, `role`, `reprise`. `loadState()` merges saved state onto these defaults (adding a field there migrates existing devices) and strips retired fields (`apiKey`, `parentAuth`).
+**State shape**: `DEFAULT_STATE` in `storage.js` — `profile`, `accessCode`, `subjects`, `lessons`, `quizzes`, `attempts`, `progress`, `curriculum`, `role`, `reprise`. `loadState()` merges saved state onto these defaults (adding a field there migrates existing devices) and strips retired fields (`apiKey`, `parentAuth`). The child's personal avatar is NOT in `state`: it lives under its own key `clicklearn:avatar` (`lireAvatar`/`ecrireAvatar`), stays on the device and must never be synced, committed or put in `public/`.
 
 **Security note**: `state.accessCode` is visible to anyone with the device; codes must be long (16+ characters). The real secrets (`ANTHROPIC_API_KEY` and the reference codes) only exist as Cloudflare Worker secrets. Cost per call is bounded server-side, but not the number of calls: keep a spending limit in the Anthropic console.
 

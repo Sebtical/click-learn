@@ -524,7 +524,7 @@ button.avatar {
   margin: 8px auto 16px;
 }
 
-.avatar-grand .mascot { width: 110px; height: 110px; }
+.avatar.avatar-grand .mascot { width: 110px; height: 110px; }
 
 .file-btn {
   display: block;

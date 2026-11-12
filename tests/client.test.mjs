@@ -322,11 +322,29 @@ test('le recadrage garde le plus grand carré centré', () => {
   assert.deepEqual({ ...cadrage(500, 500) }, { sx: 0, sy: 0, cote: 500 });
 });
 
-test("l'avatar n'est jamais envoyé au serveur", async () => {
-  const corps = [];
-  bacASable.fetch = (url, options) => { corps.push(options.body); return Promise.resolve(new Response('{"recus":1,"ignores":0}')); };
-  bacASable.state = { ...etatEnfant(), avatar: 'data:image/jpeg;base64,/9j/SECRETAVATAR' };
-  await appli('synchroniser')();
-  assert.ok(corps.length > 0, 'un envoi devait partir');
-  assert.ok(corps.every(c => !c.includes('SECRETAVATAR') && !c.includes('data:image')));
+test("l'avatar est rangé à part : ni dans l'état sauvegardé, ni dans les envois au serveur", async () => {
+  const stockage = new Map();
+  bacASable.localStorage = {
+    getItem: k => (stockage.has(k) ? stockage.get(k) : null),
+    setItem: (k, v) => stockage.set(k, String(v)),
+    removeItem: k => stockage.delete(k)
+  };
+  try {
+    appli('ecrireAvatar')('data:image/jpeg;base64,/9j/SECRETAVATAR');
+    assert.equal(appli('lireAvatar')(), 'data:image/jpeg;base64,/9j/SECRETAVATAR');
+
+    // L'état sauvegardé et les envois de synchro ne contiennent jamais l'image
+    const corps = [];
+    bacASable.fetch = (url, options) => { corps.push(options.body); return Promise.resolve(new Response('{"recus":1,"ignores":0}')); };
+    bacASable.state = etatEnfant();
+    await appli('synchroniser')();
+    assert.ok(corps.length > 0, 'un envoi devait partir');
+    assert.ok(!stockage.get('clicklearn:state').includes('SECRETAVATAR'));
+    assert.ok(corps.every(c => !c.includes('SECRETAVATAR')));
+
+    appli('ecrireAvatar')(null);
+    assert.equal(appli('lireAvatar')(), null);
+  } finally {
+    bacASable.localStorage = { setItem() {}, getItem() { return null; } };
+  }
 });

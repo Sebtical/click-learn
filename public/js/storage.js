@@ -2,6 +2,8 @@
 
 // ── État ──
 const STORAGE_KEY = 'clicklearn:state';
+// Avatar personnel : clé à part, pour ne pas le réécrire à chaque réponse ni le mêler aux données synchronisées.
+const CLE_AVATAR = 'clicklearn:avatar';
 
 // Forme de l'état. Ajouter un champ ici suffit à mettre à jour les appareils existants (voir loadState).
 // Chaque réponse (attempts) et chaque cours (lessons) peut porter un champ synchro (voir sync.js) :
@@ -16,7 +18,6 @@ const DEFAULT_STATE = {
   progress: {},
   curriculum: {},
   role: null,
-  avatar: null, // photo d'avatar (JPEG réduit) gardée sur cet appareil uniquement : jamais synchronisée
   reprise: null // null = l'enfant n'a pas encore vu l'écran de partage, 'faite' = vu (voir sync.js)
 };
 
@@ -37,6 +38,17 @@ function loadState() {
 // Sauvegarde l'état complet dans le navigateur.
 function saveState(state) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+// Lit l'avatar gardé sur cet appareil (ou null si absent ou stockage indisponible).
+function lireAvatar() {
+  try { return localStorage.getItem(CLE_AVATAR); } catch { return null; }
+}
+
+// Enregistre l'avatar sur cet appareil, ou l'efface si valeur vaut null. Lève une erreur si le stockage est plein.
+function ecrireAvatar(valeur) {
+  if (valeur === null) localStorage.removeItem(CLE_AVATAR);
+  else localStorage.setItem(CLE_AVATAR, valeur);
 }
 
 // ── Outils ──

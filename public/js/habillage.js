@@ -32,7 +32,7 @@ function attributsBanniere() {
 }
 
 // ── Avatar personnel ──
-// L'avatar choisi par l'enfant reste sur son appareil (state.avatar) : il n'est ni dans public/, ni envoyé au serveur.
+// L'avatar choisi par l'enfant reste sur son appareil (clé CLE_AVATAR, storage.js) : il n'est ni dans public/, ni envoyé au serveur.
 const TAILLE_AVATAR = 256;           // côté du carré enregistré, en pixels
 const POIDS_MAX_AVATAR = 200000;     // garde-fou en caractères (~150 Ko) pour ne pas saturer le stockage du navigateur
 
