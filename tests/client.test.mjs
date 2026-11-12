@@ -289,3 +289,15 @@ test("un titre de chapitre venu de l'IA est échappé dans la liste", () => {
   assert.ok(!li.includes('<img'), li);
   assert.match(li, /&lt;img/);
 });
+
+test('la carte de niveau ne prend une image de fond que si la bannière est fournie', () => {
+  const attributs = appli('attributsBanniere');
+  assert.equal(attributs(), '');
+  vm.runInContext("ILLUSTRATIONS.banniere = 'img/banniere.webp'", bacASable);
+  try {
+    const html = `<section class="level-card${attributs()}">`;
+    assert.equal(html, `<section class="level-card avec-banniere" style="--banniere:url('img/banniere.webp')">`);
+  } finally {
+    vm.runInContext('ILLUSTRATIONS.banniere = null', bacASable);
+  }
+});

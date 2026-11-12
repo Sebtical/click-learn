@@ -6,6 +6,7 @@
 // on renseigne le chemin seulement quand le fichier existe, pour ne jamais afficher d'image cassée.
 const ILLUSTRATIONS = {
   avatar: null,
+  banniere: null, // scène large (16:9) affichée en fond de la carte de niveau
   trophee: null,
   photo: null,
   exercice: null,
@@ -22,6 +23,12 @@ const ILLUSTRATIONS = {
 function illustration(cle, repli) {
   const src = ILLUSTRATIONS[cle];
   return src ? `<img class="illu" src="${src}" alt="" loading="lazy">` : repli;
+}
+
+// Attributs de la carte de niveau : classe et image de fond si la bannière est fournie, rien sinon.
+function attributsBanniere() {
+  const src = ILLUSTRATIONS.banniere;
+  return src ? ` avec-banniere" style="--banniere:url('${src}')` : '';
 }
 
 // ── Niveaux ──

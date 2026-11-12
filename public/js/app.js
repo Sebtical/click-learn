@@ -148,7 +148,7 @@ function renderHome() {
         </div>
       </header>
 
-      <section class="level-card">
+      <section class="level-card${attributsBanniere()}">
         <div class="level-text">
           <h2>Niveau ${n.niveau}</h2>
           <p>Encore ${n.reste} bonne${n.reste > 1 ? 's' : ''} réponse${n.reste > 1 ? 's' : ''} pour le niveau ${n.niveau + 1}</p>

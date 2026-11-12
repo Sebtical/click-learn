@@ -525,6 +525,19 @@ textarea {
   box-shadow: 0 16px 30px -16px rgba(91, 91, 214, .9);
 }
 
+/* Avec bannière : l'image remplit la carte, un voile violet à gauche garde le texte blanc lisible */
+.level-card.avec-banniere {
+  min-height: 170px;
+  align-content: end;
+  background:
+    linear-gradient(90deg, rgba(60, 60, 170, .92) 0%, rgba(60, 60, 170, .8) 40%, rgba(60, 60, 170, 0) 70%),
+    var(--banniere) 75% center / cover no-repeat,
+    var(--brand);
+}
+
+.level-card.avec-banniere .level-art { display: none; }
+.level-card.avec-banniere .level-text { max-width: 58%; }
+
 .level-card h2 {
   margin: 0;
   font-size: 1.35rem;
