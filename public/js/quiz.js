@@ -323,7 +323,7 @@ function renderQuizResult() {
   app.innerHTML = `
     <div class="card card-wide">
       <div class="hello">
-        ${goodScore && ILLUSTRATIONS.trophee ? `<img class="result-art" src="${ILLUSTRATIONS.trophee}" alt="">` : mascotSVG(64)}
+        ${goodScore ? `<span class="result-art">${illustration('trophee', mascotSVG(64))}</span>` : mascotSVG(64)}
         <div>
           <h1>Résultat</h1>
           <p class="score">${correctCount} / ${total} bonnes réponses</p>

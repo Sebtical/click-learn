@@ -196,7 +196,7 @@ function renderHome() {
   // Une carte par matière, avec son illustration (ou son emoji tant que l'image n'est pas fournie)
   const subjectCards = state.subjects.map(s => `
     <button class="subject-card" data-subject="${echapperHtml(s)}">
-      <span class="subject-art">${illustration(s, `<span class="emoji">${SUBJECT_ICONS[s] || '📘'}</span>`)}</span>
+      <span class="subject-art">${illustration(s, `<span class="emoji">${iconeMatiere(s)}</span>`)}</span>
       <span class="subject-name">${echapperHtml(s)}</span>
       <span class="go" aria-hidden="true">↗</span>
     </button>`).join('');
@@ -211,7 +211,7 @@ function renderHome() {
         </div>
       </header>
 
-      <section class="level-card">
+      <section class="level-card${ILLUSTRATIONS.banniere ? ' avec-banniere' : ''}">
         ${banniereHtml()}
         <div class="level-text">
           <h2>Niveau ${n.niveau}</h2>
@@ -266,7 +266,7 @@ function renderHome() {
 function renderSubjectQuizSetup(subject) {
   app.innerHTML = `
     <div class="card card-wide">
-      <h1>${titreMatiere(subject)}</h1>
+      ${enTete(titreMatiere(subject), '', subject)}
       <p>Quiz surprise basé sur le programme de ${state.profile.niveau}, choisis ton niveau :</p>
       <div class="actions" id="difficulty-choice">
         ${DIFFICULTIES.map(d => `<button class="difficulty-btn" data-id="${d.id}" data-label="${d.label}">${d.label}</button>`).join('')}
@@ -324,7 +324,7 @@ async function renderSubjectProgram(subject) {
   if (!state.curriculum[subject]) {
     app.innerHTML = `
       <div class="card card-wide">
-        <h1>${titreMatiere(subject)}</h1>
+        ${enTete(titreMatiere(subject), '', subject)}
         <div class="busy">
           <p>Je prépare le programme de ${state.profile.niveau}...</p>
         </div>
@@ -342,7 +342,7 @@ async function renderSubjectProgram(subject) {
     } catch (err) {
       app.innerHTML = `
         <div class="card card-wide">
-          <h1>${titreMatiere(subject)}</h1>
+          ${enTete(titreMatiere(subject), '', subject)}
           <p class="error">Erreur : ${echapperHtml(err.message)}</p>
           <button id="back-home" class="secondary">Retour à l'accueil</button>
         </div>
@@ -450,9 +450,9 @@ function renderLocalSubjectProgram(subject) {
 function renderLocalChapterQuizSetup(subject, theme) {
   app.innerHTML = `
     <div class="card card-wide">
-      ${enTete(theme.titre, `<span class="tag">${echapperHtml(subject)}</span>`, subject)}
-      <p>${theme.resume}</p>
-      <p><strong>Notions :</strong> ${theme.notions.join(', ')}</p>
+      ${enTete(echapperHtml(theme.titre), `<span class="tag">${echapperHtml(subject)}</span>`, subject)}
+      <p>${echapperHtml(theme.resume)}</p>
+      <p><strong>Notions :</strong> ${echapperHtml(theme.notions.join(', '))}</p>
       <div class="actions">
         <button id="cours-btn" class="secondary">📖 Voir le cours</button>
       </div>
@@ -493,7 +493,7 @@ function renderLessonContent(subject, theme) {
 function renderLocalQuizSetup(subject, themeId) {
   app.innerHTML = `
     <div class="card card-wide">
-      <h1>${titreMatiere(subject)}</h1>
+      ${enTete(titreMatiere(subject), '', subject)}
       <p>Quiz surprise sur tout le programme vu, choisis ton niveau :</p>
       <div class="actions" id="difficulty-choice">
         ${DIFFICULTIES.map(d => `<button class="difficulty-btn" data-id="${d.id}">${d.label}</button>`).join('')}

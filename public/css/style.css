@@ -572,7 +572,8 @@ button.avatar {
 }
 
 /* Avec bannière : l'image remplit la carte, un voile violet à gauche garde le texte blanc lisible */
-.level-card { isolation: isolate; overflow: hidden; }
+/* Classe posée par le JS (et non :has) pour rester lisible sur les navigateurs anciens */
+.level-card.avec-banniere { isolation: isolate; overflow: hidden; }
 
 .level-bg {
   position: absolute;
@@ -584,9 +585,9 @@ button.avatar {
   z-index: -2;
 }
 
-.level-card:has(.level-bg) { min-height: 170px; align-content: end; }
+.level-card.avec-banniere { min-height: 170px; align-content: end; }
 
-.level-card:has(.level-bg)::before {
+.level-card.avec-banniere::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -594,8 +595,8 @@ button.avatar {
   background: linear-gradient(90deg, rgba(60, 60, 170, .94) 0%, rgba(60, 60, 170, .8) 40%, rgba(60, 60, 170, 0) 72%);
 }
 
-.level-card:has(.level-bg) .level-art { display: none; }
-.level-card:has(.level-bg) .level-text { max-width: 58%; }
+.level-card.avec-banniere .level-art { display: none; }
+.level-card.avec-banniere .level-text { max-width: 58%; }
 
 .level-card h2 {
   margin: 0;
@@ -688,13 +689,13 @@ button.avatar {
 
 .subject-name {
   line-height: 1.2;
-  padding: 0 6px;
+  padding: 0 40px 0 6px;
 }
 
 .go {
   position: absolute;
-  top: 14px;
-  right: 14px;
+  bottom: 10px;
+  right: 10px;
   width: 30px;
   height: 30px;
   border-radius: 50%;
@@ -786,12 +787,16 @@ button.avatar {
 
 /* Trophée du résultat d'un quiz réussi */
 .result-art {
+  display: grid;
+  place-items: center;
   width: 84px;
   height: 84px;
-  object-fit: cover;
   border-radius: 20px;
+  overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
+
+.result-art .illu { width: 100%; height: 100%; object-fit: cover; }
 
 .home-foot {
   margin-top: 18px;

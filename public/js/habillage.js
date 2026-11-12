@@ -33,7 +33,7 @@ const SUBJECT_ICONS = {
 // Renvoie la balise <img> de l'illustration demandée, ou le HTML de repli si elle n'est pas encore fournie.
 function illustration(cle, repli) {
   const src = ILLUSTRATIONS[cle];
-  return src ? `<img class="illu" src="${src}" alt="" loading="lazy">` : repli;
+  return src ? `<img class="illu" src="${src}" alt="">` : repli;
 }
 
 // Image de fond de la carte de niveau si la bannière est fournie, rien sinon (la carte reste alors violette).
@@ -42,9 +42,14 @@ function banniereHtml() {
   return src ? `<img class="level-bg" src="${src}" alt="">` : '';
 }
 
-// Titre d'une matière : nom seul si elle a son illustration, sinon précédé de son emoji.
+// Emoji d'une matière (livre par défaut pour une matière inconnue).
+function iconeMatiere(matiere) {
+  return SUBJECT_ICONS[matiere] || '📘';
+}
+
+// Titre d'une matière : nom seul si elle a son illustration (affichée à côté par enTete), sinon précédé de son emoji.
 function titreMatiere(matiere) {
-  return ILLUSTRATIONS[matiere] ? echapperHtml(matiere) : `${SUBJECT_ICONS[matiere] || '📘'} ${echapperHtml(matiere)}`;
+  return ILLUSTRATIONS[matiere] ? echapperHtml(matiere) : `${iconeMatiere(matiere)} ${echapperHtml(matiere)}`;
 }
 
 // En-tête d'une fiche : titre et sous-titre à gauche, vignette illustrée à droite si elle existe.
@@ -56,7 +61,7 @@ function enTete(titreHtml, sousTitreHtml, cleImage) {
         <h1>${titreHtml}</h1>
         ${sousTitreHtml ? `<p class="subtitle">${sousTitreHtml}</p>` : ''}
       </div>
-      ${src ? `<img class="page-art" src="${src}" alt="" loading="lazy">` : ''}
+      ${src ? `<img class="page-art" src="${src}" alt="">` : ''}
     </header>`;
 }
 

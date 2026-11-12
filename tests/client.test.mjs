@@ -285,8 +285,14 @@ test('une illustration absente affiche le repli, jamais une image cassée', () =
 });
 
 test('chaque illustration déclarée existe bien dans public/img', () => {
-  const chemins = Object.values(vm.runInContext('ILLUSTRATIONS', bacASable)).filter(Boolean);
-  assert.ok(chemins.length >= 11);
+  const illustrations = vm.runInContext('ILLUSTRATIONS', bacASable);
+  // Chaque matière proposée a son illustration, et chaque fichier déclaré existe
+  for (const matiere of Object.keys(vm.runInContext('SUBJECT_ICONS', bacASable))) {
+    assert.ok(illustrations[matiere], `pas d'illustration pour ${matiere}`);
+  }
+  for (const cle of ['banniere', 'trophee', 'photo', 'exercice']) assert.ok(illustrations[cle], cle);
+  assert.equal(illustrations.avatar, null); // l'avatar personnel ne vit jamais dans public/
+  const chemins = Object.values(illustrations).filter(Boolean);
   for (const chemin of chemins) {
     assert.match(chemin, /^img\/[a-z-]+\.webp$/);
     assert.ok(readFileSync(new URL(`../public/${chemin}`, import.meta.url)).length > 0, chemin);
