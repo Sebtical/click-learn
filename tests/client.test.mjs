@@ -277,6 +277,15 @@ test('une illustration absente affiche le repli, jamais une image cassée', () =
   assert.equal(illustration('Maths', '🔢'), '🔢');
   assert.equal(illustration('inconnue', 'X'), 'X');
   vm.runInContext("ILLUSTRATIONS.Maths = 'img/maths.webp'", bacASable);
-  assert.match(illustration('Maths', '🔢'), /<img class="illu" src="img\/maths\.webp" alt=""/);
-  vm.runInContext('ILLUSTRATIONS.Maths = null', bacASable);
+  try {
+    assert.match(illustration('Maths', '🔢'), /<img class="illu" src="img\/maths\.webp" alt=""/);
+  } finally {
+    vm.runInContext('ILLUSTRATIONS.Maths = null', bacASable); // ne pas polluer les tests suivants
+  }
+});
+
+test("un titre de chapitre venu de l'IA est échappé dans la liste", () => {
+  const li = appli('chapitreLi')(0, '<img src=x onerror=alert(1)>', 50);
+  assert.ok(!li.includes('<img'), li);
+  assert.match(li, /&lt;img/);
 });

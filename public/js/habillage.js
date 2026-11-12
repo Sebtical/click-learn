@@ -8,6 +8,7 @@ const ILLUSTRATIONS = {
   avatar: null,
   trophee: null,
   photo: null,
+  exercice: null,
   'Maths': null,
   'Français': null,
   'Histoire-Géographie': null,
@@ -37,13 +38,26 @@ function niveauDepuisPoints(points) {
   };
 }
 
-// ── Anneau de maîtrise ──
+// ── Maîtrise des chapitres ──
+// Teinte d'un pourcentage de maîtrise : rouge (0 %) → vert (100 %). Seule source de cette échelle de couleurs.
+function teinteMaitrise(pct) {
+  return Math.round((Math.min(100, Math.max(0, pct)) / 100) * 120);
+}
+
 // Dessine un anneau de progression (en CSS) pour un pourcentage de maîtrise, ou un tiret si non testé.
 function anneauMaitrise(pct) {
   if (pct === null || pct === undefined) {
     return `<span class="ring vide" role="img" aria-label="Pas encore testé"><span>–</span></span>`;
   }
   const p = Math.min(100, Math.max(0, Math.round(pct)));
-  const teinte = Math.round((p / 100) * 120); // rouge (0) → vert (120), comme les pastilles de l'espace parent
-  return `<span class="ring" role="img" aria-label="Maîtrise : ${p} %" style="--p:${p};--c:hsl(${teinte} 60% 42%)"><span>${p}%</span></span>`;
+  return `<span class="ring" role="img" aria-label="Maîtrise : ${p} %" style="--p:${p};--c:hsl(${teinteMaitrise(p)} 60% 42%)"><span>${p}%</span></span>`;
+}
+
+// Ligne de la liste des chapitres : numéro, titre (échappé : il peut venir de l'IA) et anneau de maîtrise.
+function chapitreLi(i, titre, pct) {
+  return `
+    <li data-i="${i}">
+      <span class="chap-text"><span class="chap-num">Chapitre ${i + 1}</span><strong>${echapperHtml(titre)}</strong></span>
+      ${anneauMaitrise(pct)}
+    </li>`;
 }

@@ -118,9 +118,10 @@ function chapterMasteryPct(subject, themeKey) {
   return pourcentage(correct, relevant.length);
 }
 
+// Pastille de maîtrise en % (espace parent), colorée avec la même échelle que les anneaux.
 function masteryBadge(pct) {
   if (pct === null) return `<span class="mastery-pill neutral">pas encore testé</span>`;
-  const hue = Math.round((pct / 100) * 120);
+  const hue = teinteMaitrise(pct);
   return `<span class="mastery-pill" style="background:hsl(${hue} 70% 90%); color:hsl(${hue} 70% 28%); border-color:hsl(${hue} 70% 65%)">${pct}%</span>`;
 }
 
@@ -168,11 +169,14 @@ function renderHome() {
           <span><strong>Ajouter un cours</strong><small>Prends ta leçon en photo, je prépare un quiz.</small></span>
         </button>
         <button id="exercise-btn" class="action-card">
-          <span class="action-art"><span class="emoji">📸</span></span>
+          <span class="action-art">${illustration('exercice', '<span class="emoji">📸</span>')}</span>
           <span><strong>Corriger un exercice</strong><small>Photo de ton exercice, je t'explique tes erreurs.</small></span>
         </button>
+        ${state.lessons.length ? `<button id="lessons-btn" class="action-card">
+          <span class="action-art"><span class="emoji">📚</span></span>
+          <span><strong>Mes cours (${state.lessons.length})</strong><small>Retrouve les cours que tu as ajoutés.</small></span>
+        </button>` : ''}
       </div>
-      ${state.lessons.length ? `<button id="lessons-btn" class="secondary wide">📚 Mes cours (${state.lessons.length})</button>` : ''}
 
       <div class="home-foot">
         <button id="edit-config" class="link">Modifier la configuration</button>
@@ -181,6 +185,7 @@ function renderHome() {
     </div>
   `;
 
+  // Branchement des boutons
   document.querySelectorAll('.subject-card').forEach(btn => {
     btn.addEventListener('click', () => renderSubjectProgram(btn.dataset.subject));
   });
@@ -245,15 +250,6 @@ async function onGenerateProgramQuiz(subject, difficultyId, difficultyLabel, btn
   }
 }
 
-// Ligne de la liste des chapitres : numéro, titre (échappé : il peut venir de l'IA) et anneau de maîtrise.
-function chapitreLi(i, titre, pct) {
-  return `
-    <li data-i="${i}">
-      <span class="chap-text"><span class="chap-num">Chapitre ${i + 1}</span><strong>${echapperHtml(titre)}</strong></span>
-      ${anneauMaitrise(pct)}
-    </li>`;
-}
-
 async function renderSubjectProgram(subject) {
   if (isLocalSubject(subject)) {
     renderLocalSubjectProgram(subject);
@@ -282,7 +278,7 @@ async function renderSubjectProgram(subject) {
       app.innerHTML = `
         <div class="card card-wide">
           <h1>${SUBJECT_ICONS[subject] || '📘'} ${subject}</h1>
-          <p class="error">Erreur : ${err.message}</p>
+          <p class="error">Erreur : ${echapperHtml(err.message)}</p>
           <button id="back-home" class="secondary">Retour à l'accueil</button>
         </div>
       `;
@@ -316,10 +312,10 @@ async function renderSubjectProgram(subject) {
 function renderChapterQuizSetup(subject, chapter) {
   app.innerHTML = `
     <div class="card card-wide">
-      <h1>${chapter.titre}</h1>
+      <h1>${echapperHtml(chapter.titre)}</h1>
       <p class="tag">${subject}</p>
-      <p>${chapter.resume}</p>
-      <p><strong>Notions :</strong> ${chapter.notions.join(', ')}</p>
+      <p>${echapperHtml(chapter.resume)}</p>
+      <p><strong>Notions :</strong> ${echapperHtml(chapter.notions.join(', '))}</p>
       <h2>Générer un parcours de révision</h2>
       <div class="actions" id="difficulty-choice">
         ${DIFFICULTIES.map(d => `<button class="difficulty-btn" data-id="${d.id}" data-label="${d.label}">${d.label}</button>`).join('')}

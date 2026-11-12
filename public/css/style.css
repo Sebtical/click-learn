@@ -521,7 +521,7 @@ textarea {
   padding: 18px 20px 20px;
   border-radius: 24px;
   color: #fff;
-  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  background: linear-gradient(135deg, #4B4BC4, var(--brand));
   box-shadow: 0 16px 30px -16px rgba(91, 91, 214, .9);
 }
 
@@ -534,7 +534,6 @@ textarea {
   margin: 2px 0 0;
   font-size: 0.85rem;
   font-weight: 600;
-  opacity: .92;
 }
 
 .level-art {
@@ -559,7 +558,6 @@ textarea {
 .level-bar span {
   display: block;
   height: 100%;
-  min-width: 12px;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--peach), #F4A877);
 }
@@ -693,26 +691,6 @@ textarea {
   font-size: 0.85rem;
 }
 
-.divider {
-  margin: 26px 0 4px;
-  text-align: center;
-  color: var(--ink-2);
-  font-size: 0.85rem;
-  font-weight: 700;
-  position: relative;
-}
-
-.divider::before, .divider::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: 28%;
-  border-top: 1.5px solid var(--line);
-}
-
-.divider::before { left: 0; }
-.divider::after { right: 0; }
-
 /* ── Mascotte (résultats de quiz, correction) ── */
 .hello {
   display: grid;
@@ -733,40 +711,6 @@ textarea {
 
 @keyframes bob {
   50% { transform: translateY(-4px) rotate(-3deg); }
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
-}
-
-.topbar .sp { flex: 1; }
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 999px;
-  padding: 5px 12px;
-  background: var(--card);
-  box-shadow: var(--shadow-sm);
-  font-weight: 800;
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.foot-parent {
-  margin-top: 26px;
-  text-align: center;
-}
-
-.foot-parent a, .foot-parent button.link {
-  font-size: 0.8rem;
-  color: var(--ink-2);
-  opacity: .7;
 }
 
 /* ── Espace parent ── */
