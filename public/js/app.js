@@ -681,6 +681,7 @@ function renderLessonDetail(lesson) {
 
   document.getElementById('fiche-btn')?.addEventListener('click', e => onPlusDeDetails(lesson, e.currentTarget));
   document.getElementById('mini-quiz-btn')?.addEventListener('click', () => lancerMiniQuiz(lesson));
+  document.getElementById('carte-btn')?.addEventListener('click', e => onCarteMentale(lesson, e.currentTarget));
   document.querySelectorAll('.difficulty-btn').forEach(btn => {
     btn.addEventListener('click', () => onGenerateQuiz(lesson, btn.dataset.id, btn.dataset.label, btn));
   });
@@ -712,6 +713,41 @@ async function onPlusDeDetails(lesson, btn) {
   }
   btn.remove();
   zone.innerHTML = ficheDetailleeHtml(lesson);
+}
+
+// Carte mentale d'un cours : demandée une fois à l'IA, puis gardée sur l'appareil et dessinée par l'appli.
+async function onCarteMentale(lesson, btn) {
+  const zone = document.getElementById('carte-zone');
+  if (!lesson.carte) {
+    btn.disabled = true;
+    btn.textContent = 'Création de la carte...';
+    try {
+      const reponse = await callClaudeJSON(state.accessCode, carteMentalePrompt(state.profile.niveau, lesson), {
+        system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 2500
+      });
+      const carte = validerCarteMentale(reponse);
+      if (!carte) throw new Error("réponse de l'IA inutilisable, réessaie");
+      lesson.carte = carte;
+      saveState(state);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '🧠 Carte mentale';
+      zone.innerHTML = `<p class="error">Impossible de créer la carte : ${echapperHtml(err.message)}</p>`;
+      return;
+    }
+  }
+  btn.remove();
+  zone.innerHTML = carteMentaleHtml(lesson.carte);
+  // Enregistrement en image : partage du téléphone (Photos) ou téléchargement
+  document.getElementById('carte-image-btn').addEventListener('click', async () => {
+    const info = document.getElementById('carte-image-info');
+    try {
+      const mode = await enregistrerCarteImage(lesson.carte, lesson.titre);
+      info.textContent = mode === 'telechargement' ? 'Image téléchargée.' : '';
+    } catch (err) {
+      if (err.name !== 'AbortError') info.textContent = `Image impossible : ${err.message}`; // AbortError : partage annulé
+    }
+  });
 }
 
 // Cours sur mesure : l'IA explique les erreurs du quiz qui vient de se terminer, puis le cours est

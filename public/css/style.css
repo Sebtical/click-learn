@@ -1111,3 +1111,31 @@ button.avatar {
   width: 100%;
   margin-top: 12px;
 }
+
+/* ── Cartes mentales : pile sur téléphone tenu droit, étoile sinon ── */
+.carte-mentale {
+  margin: 14px 0;
+  min-width: 0; /* sans cela, la largeur fixe du dessin empêche la fiche de rétrécir */
+}
+
+.carte-svg {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 22px;
+  box-shadow: var(--shadow-sm);
+}
+
+.carte-etoile { display: none; }
+
+@media (min-width: 640px), (orientation: landscape) {
+  .carte-pile { display: none; }
+  .carte-etoile { display: block; }
+}
+
+#carte-btn,
+#carte-image-btn {
+  width: 100%;
+  margin-top: 12px;
+}

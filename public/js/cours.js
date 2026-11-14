@@ -140,6 +140,8 @@ function ficheCoursHtml(cours, difficultes) {
       ${enTete(echapperHtml(cours.titre), `<span class="tag">${etiquette}</span>`, cours.matiere)}
       <p>${echapperHtml(cours.resume)}</p>
       <p><strong>Notions :</strong> ${notionsTexte(cours.notions)}</p>
+      <button id="carte-btn" class="secondary">🧠 Carte mentale</button>
+      <div id="carte-zone"></div>
       ${surMesure
         ? `${explicationsHtml(cours.explications || [])}
            ${cours.questions?.length ? `<button id="mini-quiz-btn">✅ Vérifier que j'ai compris</button>` : ''}`

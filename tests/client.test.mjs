@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 
-const SCRIPTS = ['storage', 'api', 'prompts', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent', 'quiz', 'cours'];
+const SCRIPTS = ['storage', 'api', 'prompts', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent', 'quiz', 'cours', 'carte'];
 const bacASable = vm.createContext({
   console, setTimeout,
   state: { quizzes: [] },
@@ -544,4 +544,55 @@ test('une fraction incohérente renvoyée par l\'IA est écartée du mini-quiz',
 test("les consignes de l'IA imposent le type fraction pour une réponse en fraction", () => {
   assert.ok(appli('coursSurMesurePrompt')('5ème', 'Maths', []).includes('"type": "fraction"'));
   assert.ok(appli('questionSetInstructions')().includes('jamais "num"'));
+});
+
+// ── Cartes mentales ──
+const CARTE = {
+  centre: 'Les fractions',
+  branches: [
+    { titre: 'Définition', elements: ['a/b : a parts sur b', 'b ≠ 0'] },
+    { titre: 'Simplifier', elements: ['diviser haut ET bas par le même nombre', '6/8 = 3/4'] },
+    { titre: 'Additionner', elements: ['même dénominateur d\'abord'] }
+  ]
+};
+
+test("une carte mentale de l'IA est bornée, et refusée sous 2 branches", () => {
+  const valider = appli('validerCarteMentale');
+  assert.equal(valider(null), null);
+  assert.equal(valider({ centre: 'c', branches: [{ titre: 'seule', elements: ['x'] }] }), null);
+  const carte = valider({
+    centre: '  ', branches: Array.from({ length: 9 }, (_, i) => ({ titre: `B${i}`, elements: ['x'.repeat(200), 4, '', 'a', 'b', 'c', 'd', 'e'] }))
+  });
+  assert.equal(carte.centre, 'Mon cours');
+  assert.equal(carte.branches.length, 6);
+  assert.equal(carte.branches[0].elements.length, 5);
+  assert.equal(carte.branches[0].elements[0].length, 90);
+});
+
+test('le découpage en lignes respecte les mots et coupe un mot trop long', () => {
+  const couper = appli('couperLignes');
+  assert.deepEqual([...couper('diviser haut et bas par le même nombre', 16)], ['diviser haut et', 'bas par le même', 'nombre']);
+  assert.deepEqual([...couper('anticonstitutionnellement', 10)], ['anticonsti', 'tutionnell', 'ement']);
+});
+
+test("les deux dispositions de la carte contiennent tous les textes, échappés", () => {
+  const piegee = { centre: PIEGE, branches: [{ titre: PIEGE, elements: [PIEGE] }, ...CARTE.branches] };
+  for (const nom of ['carteMentalePileSvg', 'carteMentaleEtoileSvg']) {
+    const svg = appli(nom)(piegee);
+    assert.ok(!svg.includes('<img'), nom);
+    assert.equal(svg.split('<text').length, svg.split('</text>').length, `${nom} : balises équilibrées`);
+    for (const mot of ['Simplifier', '6/8 = 3/4', 'Additionner']) assert.ok(svg.includes(mot), `${nom} : ${mot}`);
+  }
+  assert.match(appli('carteMentalePileSvg')(CARTE), /viewBox="0 0 360 /);
+  assert.match(appli('carteMentaleEtoileSvg')(CARTE), /viewBox="0 0 760 /);
+  const bloc = appli('carteMentaleHtml')(CARTE);
+  assert.ok(bloc.includes('carte-pile') && bloc.includes('carte-etoile') && bloc.includes('carte-image-btn'));
+});
+
+test('la carte mentale part de la fiche détaillée si elle existe, sinon du résumé', () => {
+  const prompt = appli('carteMentalePrompt');
+  assert.ok(prompt('5ème', { matiere: 'SVT', titre: 'T', fiche: 'FICHE FIDELE', resume: 'RESUME' }).includes('FICHE FIDELE'));
+  const sansFiche = prompt('5ème', { matiere: 'SVT', titre: 'T', resume: 'RESUME', notions: ['n'], explications: [{ notion: 'N', methode: 'M' }] });
+  assert.ok(sansFiche.includes('RESUME') && sansFiche.includes('- N : M'));
+  assert.ok(appli('ficheCoursHtml')({ titre: 'T', matiere: 'SVT', resume: '', notions: [] }, []).includes('id="carte-btn"'));
 });

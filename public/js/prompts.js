@@ -83,6 +83,26 @@ ${FORMAT_FICHE}
 Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown : {"fiche": "..."}`;
 }
 
+// Carte mentale d'un cours : contenu seulement (l'appli la dessine). Source la plus fidèle disponible :
+// la fiche détaillée si elle existe, sinon le résumé, les notions et les explications d'un cours sur mesure.
+function carteMentalePrompt(niveau, cours) {
+  const explications = (cours.explications || []).map(e => `- ${e.notion} : ${e.methode}`).join('\n');
+  const source = cours.fiche
+    ? `Fiche du cours :
+${cours.fiche}`
+    : `Résumé : ${cours.resume}
+Notions : ${(cours.notions || []).join(', ')}${explications ? `
+Méthodes à retenir :
+${explications}` : ''}`;
+  return `Tu es un professeur de ${cours.matiere} qui aide un(e) élève de ${niveau} (collège, France) à réviser avec une carte mentale.
+Cours : ${cours.titre}
+${source}
+
+Construis le contenu d'une carte mentale de ce cours : au centre, le thème en 1 à 4 mots ; autour, 3 à ${CARTE_MAX_BRANCHES} branches (par exemple définitions, règles, méthodes, exemples, pièges à éviter), chacune avec 2 à ${CARTE_MAX_ELEMENTS} éléments très courts (mots-clés, formules ou mini-exemples, 60 caractères au plus). Reste fidèle au cours, sans rien ajouter qui n'y soit pas. Écris les formules en texte simple (ex : a/b, x², √2).
+Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown :
+{"centre": "...", "branches": [{"titre": "...", "elements": ["...", "..."]}]}`;
+}
+
 // Nombre de questions du mini-quiz qui suit un cours sur mesure.
 const NB_QUESTIONS_SUR_MESURE = 5;
 
