@@ -351,6 +351,177 @@ async function handleSuivi(request, env) {
   });
 }
 
+// ── Notifications (Web Push) ──
+// Chiffrement du message (RFC 8291, aes128gcm) et signature du serveur (RFC 8292, VAPID), écrits avec
+// les outils de chiffrement intégrés (WebCrypto), sans dépendance. Le message passe par le service
+// d'Apple ou de Google, qui ne peut pas le lire. Secret requis : VAPID_JWK (clé privée P-256 en JWK).
+
+// Services de notification acceptés : le serveur ne contacte jamais une autre adresse.
+const SERVICES_PUSH = ['web.push.apple.com', 'fcm.googleapis.com', 'updates.push.services.mozilla.com', 'notify.windows.com'];
+const CONTACT_VAPID = 'https://click-learn.scanquelain.workers.dev'; // contact exigé par la norme : le site, pas un e-mail
+
+// Encodage base64url (sans remplissage) d'octets, et l'inverse.
+function versBase64Url(octets) {
+  let binaire = '';
+  for (const o of new Uint8Array(octets)) binaire += String.fromCharCode(o);
+  return btoa(binaire).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function depuisBase64Url(texte) {
+  const b64 = texte.replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(b64 + '='.repeat((4 - b64.length % 4) % 4)), c => c.charCodeAt(0));
+}
+
+// Concatène des suites d'octets.
+function concatener(...parts) {
+  const total = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let i = 0;
+  for (const p of parts) { total.set(p, i); i += p.length; }
+  return total;
+}
+
+// HKDF-SHA256 (dérivation de clé) : longueur octets à partir d'un sel, d'un secret et d'une info.
+async function hkdf(sel, secret, info, longueur) {
+  const cle = await crypto.subtle.importKey('raw', secret, 'HKDF', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: sel, info }, cle, longueur * 8));
+}
+
+// Chiffre un message pour un téléphone (RFC 8291) ; renvoie le corps binaire à envoyer.
+async function chiffrerPush(message, p256dh, auth) {
+  const clePubliqueTel = depuisBase64Url(p256dh);
+  const secretTel = depuisBase64Url(auth);
+  // Paire de clés éphémère du serveur, puis secret commun avec le téléphone (ECDH)
+  const ephemere = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const clePubliqueServeur = new Uint8Array(await crypto.subtle.exportKey('raw', ephemere.publicKey));
+  const cleTel = await crypto.subtle.importKey('raw', clePubliqueTel, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const secretEcdh = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: cleTel }, ephemere.privateKey, 256));
+  // Dérivations de la norme : clé de contenu (16 octets) et nonce (12 octets)
+  const enc = new TextEncoder();
+  const ikm = await hkdf(secretTel, secretEcdh, concatener(enc.encode('WebPush: info\0'), clePubliqueTel, clePubliqueServeur), 32);
+  const sel = crypto.getRandomValues(new Uint8Array(16));
+  const cleContenu = await hkdf(sel, ikm, enc.encode('Content-Encoding: aes128gcm\0'), 16);
+  const nonce = await hkdf(sel, ikm, enc.encode('Content-Encoding: nonce\0'), 12);
+  // Chiffrement AES-GCM du message suivi du délimiteur de dernier bloc (0x02)
+  const cleAes = await crypto.subtle.importKey('raw', cleContenu, 'AES-GCM', false, ['encrypt']);
+  const chiffre = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, cleAes, concatener(enc.encode(message), new Uint8Array([2]))));
+  // En-tête : sel, taille de bloc (4096), longueur et valeur de la clé publique du serveur
+  const entete = concatener(sel, new Uint8Array([0, 0, 16, 0]), new Uint8Array([clePubliqueServeur.length]), clePubliqueServeur);
+  return concatener(entete, chiffre);
+}
+
+// Clé publique du serveur (base64url, 65 octets) tirée de la clé privée JWK : à donner aux téléphones.
+function clePubliqueVapid(jwk) {
+  return versBase64Url(concatener(new Uint8Array([4]), depuisBase64Url(jwk.x), depuisBase64Url(jwk.y)));
+}
+
+// Signature du serveur (RFC 8292) : jeton JWT ES256 valable 12 h pour le service visé.
+async function enteteVapid(endpoint, jwk) {
+  const enc = new TextEncoder();
+  const enTete = versBase64Url(enc.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
+  const charge = versBase64Url(enc.encode(JSON.stringify({
+    aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: CONTACT_VAPID
+  })));
+  const cle = await crypto.subtle.importKey('jwk', { ...jwk, key_ops: ['sign'] }, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, cle, enc.encode(`${enTete}.${charge}`));
+  return `vapid t=${enTete}.${charge}.${versBase64Url(signature)}, k=${clePubliqueVapid(jwk)}`;
+}
+
+// Clé privée VAPID depuis le secret ; null si absente ou illisible (les notifications sont alors coupées).
+function lireCleVapid(env) {
+  const jwk = lireJson(env.VAPID_JWK);
+  return jwk && jwk.kty === 'EC' && jwk.d && jwk.x && jwk.y ? jwk : null;
+}
+
+// Adresse d'abonnement acceptable : https, vers un service de notification connu.
+function endpointAccepte(endpoint) {
+  try {
+    const url = new URL(endpoint);
+    return url.protocol === 'https:' && SERVICES_PUSH.some(h => url.hostname === h || url.hostname.endsWith('.' + h));
+  } catch {
+    return false;
+  }
+}
+
+// Envoie un message à un abonnement ; un abonnement expiré (404 ou 410) est supprimé.
+async function envoyerPush(env, abonnement, message, jwk) {
+  try {
+    const reponse = await fetch(abonnement.endpoint, {
+      method: 'POST',
+      headers: {
+        authorization: await enteteVapid(abonnement.endpoint, jwk),
+        'content-encoding': 'aes128gcm',
+        'content-type': 'application/octet-stream',
+        ttl: '86400',
+        urgency: 'normal'
+      },
+      body: await chiffrerPush(JSON.stringify(message), abonnement.p256dh, abonnement.auth)
+    });
+    if (reponse.status === 404 || reponse.status === 410) {
+      await env.DB.prepare('DELETE FROM abonnements_push WHERE endpoint = ?1').bind(abonnement.endpoint).run();
+    }
+  } catch {
+    // Une notification ratée ne doit jamais faire échouer l'action du joueur
+  }
+}
+
+// Nombre de défis qu'un joueur n'a pas encore joués, y compris ceux qu'il a lancés (pastille sur l'icône).
+async function defisEnAttente(env, role) {
+  const ligne = await env.DB.prepare(
+    `SELECT COUNT(*) AS nb FROM defis d
+       WHERE NOT EXISTS (SELECT 1 FROM participations p WHERE p.defi_id = d.id AND p.joueur = ?1)`
+  ).bind(role).first();
+  return ligne?.nb ?? 0;
+}
+
+// Notifie tous les joueurs sauf l'auteur de l'action ; message(role) donne { titre, corps } pour chacun.
+async function notifierAutres(env, auteur, message) {
+  const jwk = lireCleVapid(env);
+  if (!jwk) return;
+  let abonnements;
+  try {
+    abonnements = (await env.DB.prepare('SELECT * FROM abonnements_push WHERE role != ?1').bind(auteur).all()).results;
+  } catch {
+    return;
+  }
+  await Promise.all(abonnements.map(async a => {
+    const contenu = message(a.role);
+    if (!contenu) return;
+    const badge = await defisEnAttente(env, a.role).catch(() => 0);
+    await envoyerPush(env, a, { ...contenu, badge, url: '/' }, jwk);
+  }));
+}
+
+// /api/notifications : GET donne la clé publique du serveur ; POST enregistre l'abonnement du téléphone.
+async function handleNotifications(request, env) {
+  const methode = request.method === 'POST' ? 'POST' : 'GET';
+  const { role, refus } = await controlerAcces(request, env, methode);
+  if (refus) return refus;
+  const jwk = lireCleVapid(env);
+  if (!jwk) return erreur(503, 'Notifications indisponibles pour le moment.');
+  if (methode === 'GET') return reponseJson(200, { cle: clePubliqueVapid(jwk) });
+  const envoi = lireObjetJson(await request.text());
+  const endpoint = envoi?.endpoint;
+  const p256dh = envoi?.keys?.p256dh, auth = envoi?.keys?.auth;
+  if (typeof endpoint !== 'string' || endpoint.length > 1000 || !endpointAccepte(endpoint)
+    || typeof p256dh !== 'string' || p256dh.length > 200 || typeof auth !== 'string' || auth.length > 100) {
+    return erreur(400, 'Abonnement invalide.');
+  }
+  try {
+    await env.DB.prepare(
+      `INSERT INTO abonnements_push (endpoint, role, p256dh, auth, maj) VALUES (?1, ?2, ?3, ?4, ?5)
+       ON CONFLICT (endpoint) DO UPDATE SET role = excluded.role, p256dh = excluded.p256dh, auth = excluded.auth, maj = excluded.maj`
+    ).bind(endpoint, role, p256dh, auth, new Date().toISOString()).run();
+  } catch {
+    return erreur(500, 'Enregistrement impossible pour le moment.');
+  }
+  return reponseJson(200, { abonne: true });
+}
+
+// Nom affiché d'un joueur dans une notification (surnom, sinon « Papa/Maman » par défaut).
+async function nomJoueur(env, role) {
+  const noms = await surnoms(env).catch(() => ({}));
+  return noms[role] || { enfant: 'Ton enfant', parent1: 'Un parent', parent2: 'Un parent' }[role];
+}
+
 // ── Défis en famille ──
 // Un joueur lance un quiz figé ; chacun le joue quand il veut ; les réponses des autres ne sont
 // visibles qu'après avoir joué soi-même. Le joueur est toujours déduit du code d'accès.
@@ -405,7 +576,7 @@ function participationsVisibles(participations, role) {
 }
 
 // POST /api/defis : lance un défi (n'importe quel joueur).
-async function creerDefi(request, env, role) {
+async function creerDefi(request, env, role, ctx) {
   const envoi = lireObjetJson(await request.text());
   if (envoi === null || typeof envoi.id !== 'string' || !envoi.id || envoi.id.length > 100) return erreur(400, 'Défi invalide.');
   const questions = questionsDefiValides(envoi.questions);
@@ -415,10 +586,17 @@ async function creerDefi(request, env, role) {
   ).bind(envoi.id, role, texteBorne(envoi.matiere, 100), texteBorne(envoi.titre, 200), questions, new Date().toISOString())];
   const surnom = texteBorne(envoi.surnom, 40);
   if (surnom) ecritures.push(ecritureSurnom(env, role, surnom));
+  let resultats;
   try {
-    await env.DB.batch(ecritures);
+    resultats = await env.DB.batch(ecritures);
   } catch {
     return erreur(500, 'Enregistrement impossible pour le moment.');
+  }
+  // Nouveau défi (pas un renvoi du même) : les deux autres joueurs sont prévenus
+  if (resultats[0]?.meta?.changes) {
+    const nom = await nomJoueur(env, role);
+    const titre = texteBorne(envoi.titre, 200) || 'un quiz';
+    await attendre(ctx, notifierAutres(env, role, () => ({ titre: 'Nouveau défi 🏆', corps: `${nom} t'a lancé un défi : ${titre}` })));
   }
   return reponseJson(200, { id: envoi.id });
 }
@@ -470,7 +648,7 @@ async function lireDefi(env, role, id) {
 }
 
 // POST /api/defis/:id/participation : enregistre le résultat de ce joueur (une seule fois).
-async function participerDefi(request, env, role, id) {
+async function participerDefi(request, env, role, id, ctx) {
   const envoi = lireObjetJson(await request.text());
   if (envoi === null) return erreur(400, 'Participation invalide.');
   let defi;
@@ -496,11 +674,21 @@ async function participerDefi(request, env, role, id) {
   }
   // INSERT OR IGNORE : aucune ligne écrite = ce joueur avait déjà joué (son premier résultat compte)
   if (resultats[0]?.meta?.changes === 0) return erreur(409, 'Tu as déjà joué ce défi.');
+  // Les autres sont prévenus, sans le score (gardé pour l'appli) : « à toi » ou « qui a gagné ? »
+  await attendre(ctx, (async () => {
+    const nom = await nomJoueur(env, role);
+    const titre = (await env.DB.prepare('SELECT titre FROM defis WHERE id = ?1').bind(id).first().catch(() => null))?.titre || 'le défi';
+    const joueurs = new Set((await env.DB.prepare('SELECT joueur FROM participations WHERE defi_id = ?1').bind(id).all()).results.map(p => p.joueur));
+    await notifierAutres(env, role, r => ({
+      titre: 'Défi terminé 🏁',
+      corps: joueurs.has(r) ? `${nom} a terminé « ${titre} » : découvrez qui a gagné !` : `${nom} a terminé « ${titre} » : à toi de jouer !`
+    }));
+  })().catch(() => {}));
   return reponseJson(200, { enregistre: true });
 }
 
 // Aiguillage des routes /api/defis… (tous les joueurs y ont accès).
-async function handleDefis(request, env, chemin) {
+async function handleDefis(request, env, chemin, ctx) {
   const morceaux = chemin.split('/').filter(Boolean); // ['api', 'defis', id?, 'participation'?]
   const id = morceaux[2] ? decodeURIComponent(morceaux[2]) : null;
   const methode = morceaux.length === 2 && request.method === 'POST' ? 'POST'
@@ -508,20 +696,27 @@ async function handleDefis(request, env, chemin) {
   if (morceaux.length > 4 || (morceaux.length === 4 && morceaux[3] !== 'participation')) return erreur(404, 'Route inconnue.');
   const { role, refus } = await controlerAcces(request, env, methode);
   if (refus) return refus;
-  if (!id) return methode === 'POST' ? creerDefi(request, env, role) : listerDefis(env, role);
+  if (!id) return methode === 'POST' ? creerDefi(request, env, role, ctx) : listerDefis(env, role);
   if (id.length > 100) return erreur(400, 'Défi invalide.');
-  return morceaux.length === 4 ? participerDefi(request, env, role, id) : lireDefi(env, role, id);
+  return morceaux.length === 4 ? participerDefi(request, env, role, id, ctx) : lireDefi(env, role, id);
+}
+
+// Laisse une tâche finir après la réponse (notifications) ; sans contexte (tests), on l'attend.
+function attendre(ctx, promesse) {
+  if (ctx?.waitUntil) ctx.waitUntil(promesse);
+  else return promesse;
 }
 
 // ── Aiguillage ──
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === '/api/moi') return handleMoi(request, env);
     if (url.pathname === '/api/parent/suivi') return handleSuivi(request, env);
     if (url.pathname === '/api/sync') return handleSync(request, env);
     if (url.pathname === '/api/claude') return handleClaudeProxy(request, env);
-    if (url.pathname === '/api/defis' || url.pathname.startsWith('/api/defis/')) return handleDefis(request, env, url.pathname);
+    if (url.pathname === '/api/defis' || url.pathname.startsWith('/api/defis/')) return handleDefis(request, env, url.pathname, ctx);
+    if (url.pathname === '/api/notifications') return handleNotifications(request, env);
     return env.ASSETS.fetch(request);
   }
 };
