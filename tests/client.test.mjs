@@ -173,6 +173,7 @@ test('l\'écran parent s\'affiche, échappe les textes et signale la troncature'
   });
   appli('afficherSuivi')({
     profil: { prenom: 'Léa', niveau: '5ème' }, nbCours: 1, tronque: true,
+    cours: [{ matiere: 'SVT', titre: piege, resume: piege, notions: ['noyau', piege], date: '2026-11-12T10:00:00Z' }],
     tentatives: [ligne('a', 0, { reponse_donnee: piege, notion: piege }), ligne('b', 1), ligne('c', 0, { reponse_donnee: null })]
   });
   const page = bacASable.app.innerHTML;
@@ -182,6 +183,8 @@ test('l\'écran parent s\'affiche, échappe les textes et signale la troncature'
   assert.ok(page.includes('non conservée'));
   assert.ok(page.includes('dernières réponses'), 'la troncature doit être signalée');
   assert.match(page, /<b>1<\/b><span>Quiz faits/);
+  assert.ok(page.includes('Ses derniers cours'));
+  assert.ok(page.includes('noyau'));
 });
 
 // ── Vocabulaire ──

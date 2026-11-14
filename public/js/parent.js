@@ -64,7 +64,7 @@ function dateCourte(iso) {
 // ── Affichage ──
 
 // Construit l'écran de suivi à partir des données du serveur.
-function afficherSuivi({ profil, tentatives, nbCours, tronque }) {
+function afficherSuivi({ profil, tentatives, nbCours, cours = [], tronque }) {
   // Aucune donnée partagée : on explique comment démarrer
   if (!profil && tentatives.length === 0) {
     app.innerHTML = `
@@ -111,6 +111,13 @@ function afficherSuivi({ profil, tentatives, nbCours, tronque }) {
       <p class="hint">Sa réponse : <strong>${t.reponse_donnee ? echapperHtml(t.reponse_donnee) : '<em>non conservée</em>'}</strong>
         ${t.bonne_reponse ? `<br>Bonne réponse : <strong>${echapperHtml(t.bonne_reponse)}</strong>` : ''}</p>
     </li>`).join('');
+  const lignesCours = cours.map(c => `
+    <li class="exercise-item">
+      <p class="subtitle">${dateCourte(c.date)} — ${echapperHtml(c.matiere || 'Cours')}</p>
+      <p class="ex-statement">📚 ${echapperHtml(c.titre || '(sans titre)')}</p>
+      ${c.resume ? `<p>${echapperHtml(c.resume)}</p>` : ''}
+      ${c.notions?.length ? `<p class="hint">Notions : ${echapperHtml(c.notions.join(', '))}</p>` : ''}
+    </li>`).join('');
   const lignesHistorique = historique.map(h =>
     `<li><span>${dateCourte(h.derniere)} — ${echapperHtml(h.matiere)}</span><span>${h.justes}/${h.total}</span></li>`).join('');
 
@@ -141,6 +148,11 @@ function afficherSuivi({ profil, tentatives, nbCours, tronque }) {
       <div class="parent-section">
         <h3>Dernières réponses fausses</h3>
         ${lignesErreurs ? `<ul class="exercise-list">${lignesErreurs}</ul>` : '<p class="subtitle">Aucune erreur pour le moment. 🎉</p>'}
+      </div>
+
+      <div class="parent-section">
+        <h3>📚 Ses derniers cours</h3>
+        ${lignesCours ? `<ul class="exercise-list">${lignesCours}</ul>` : '<p class="subtitle">Aucun cours ajouté pour le moment.</p>'}
       </div>
 
       <div class="parent-section">

@@ -283,14 +283,21 @@ test('chaque parent lit le profil, les réponses et les cours de l\'enfant', asy
   await synchroniser({
     profil: { prenom: 'Léa', niveau: '5ème' },
     tentatives: [TENTATIVE, { ...TENTATIVE, id: 'id-2', correct: true, date: '2026-11-11T10:00:00.000Z' }],
-    cours: [{ id: 'c-1', titre: 'La cellule', date: '2026-11-10' }]
+    cours: [
+      { id: 'c-1', matiere: 'SVT', titre: 'La cellule', resume: 'Tout être vivant…', notions: ['noyau', 'membrane'], date: '2026-11-10' },
+      { id: 'c-2', matiere: 'Maths', titre: 'Fractions', date: '2026-11-12' }
+    ]
   }, env);
   for (const code of ['code-parent-un', 'code-parent-deux']) {
     const reponse = await lireSuivi(env, code);
     assert.equal(reponse.status, 200);
     const suivi = await reponse.json();
     assert.equal(suivi.profil.prenom, 'Léa');
-    assert.equal(suivi.nbCours, 1);
+    assert.equal(suivi.nbCours, 2);
+    // Derniers cours, plus récent d'abord, notions déjà décodées ; jamais de photo
+    assert.deepEqual(suivi.cours.map(c => c.titre), ['Fractions', 'La cellule']);
+    assert.deepEqual(suivi.cours[1], { matiere: 'SVT', titre: 'La cellule', resume: 'Tout être vivant…', notions: ['noyau', 'membrane'], date: '2026-11-10' });
+    assert.deepEqual(suivi.cours[0].notions, []);
     assert.deepEqual(suivi.tentatives.map(t => t.id), ['id-2', 'id-1']); // plus récente d'abord
     assert.equal(suivi.tentatives[1].reponse_donnee, '2/3');
   }
@@ -306,6 +313,14 @@ test('un code inconnu ne peut pas lire l\'espace parent', async () => {
   assert.equal(reponse.status, 401);
 });
 
+test('des notions illisibles en base ne cassent pas le suivi', async () => {
+  const env = { ...ENV, DB: faireD1() };
+  await synchroniser({ cours: [{ id: 'c-1', titre: 'T', date: '2026-11-10' }] }, env);
+  env.DB.lire("UPDATE cours SET notions = 'pas du json'");
+  const suivi = await (await lireSuivi(env)).json();
+  assert.deepEqual(suivi.cours[0].notions, []);
+});
+
 test('/api/parent/suivi refuse une autre méthode que GET', async () => {
   const reponse = await lireSuivi({ ...ENV, DB: faireD1() }, 'code-parent-un', 'POST');
   assert.equal(reponse.status, 405);
@@ -313,7 +328,7 @@ test('/api/parent/suivi refuse une autre méthode que GET', async () => {
 
 test('sans aucune donnée partagée, le suivi est vide mais valide', async () => {
   const suivi = await (await lireSuivi({ ...ENV, DB: faireD1() })).json();
-  assert.deepEqual(suivi, { profil: null, tentatives: [], nbCours: 0, tronque: false });
+  assert.deepEqual(suivi, { profil: null, tentatives: [], nbCours: 0, cours: [], tronque: false });
 });
 
 // ── Requêtes invalides : refus avant tout appel payant ──

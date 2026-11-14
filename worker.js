@@ -12,6 +12,7 @@ const PLAFOND_MAX_TOKENS = 5000; // appel le plus long de l'appli : 5000 (app.js
 const TAILLE_MAX_LOT = 200;      // éléments par envoi /api/sync (le navigateur découpe en lots)
 const LONGUEUR_MAX_TEXTE = 2000; // au-delà, un texte est tronqué avant d'entrer en base
 const LIMITE_SUIVI = 5000;       // réponses les plus récentes renvoyées à l'espace parent
+const LIMITE_COURS_SUIVI = 10;   // derniers cours détaillés dans l'espace parent
 
 // ── Outils ──
 
@@ -222,20 +223,35 @@ async function handleSync(request, env) {
 }
 
 // ── Espace parent ──
-// Renvoie le profil, les dernières réponses et le nombre de cours de l'enfant ; lecture réservée aux codes parents.
+
+// Décode la liste de notions stockée en JSON ; une valeur illisible donne une liste vide.
+function lireNotions(texte) {
+  try {
+    const notions = JSON.parse(texte);
+    return Array.isArray(notions) ? notions.filter(n => typeof n === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+// Renvoie le profil, les dernières réponses, le nombre et le détail des derniers cours de l'enfant ;
+// lecture réservée aux codes parents.
 async function handleSuivi(request, env) {
   const { refus } = await controlerAcces(request, env, 'GET', ['parent1', 'parent2'], 'Espace réservé aux parents.');
   if (refus) return refus;
 
-  let profil, tentatives, cours;
+  let profil, tentatives, cours, derniersCours;
   try {
-    [profil, tentatives, cours] = await Promise.all([
+    [profil, tentatives, cours, derniersCours] = await Promise.all([
       env.DB.prepare('SELECT prenom, niveau, maj FROM profils WHERE role = ?1').bind('enfant').first(),
       env.DB.prepare(
         `SELECT id, quiz_id, matiere, theme, notion, type, correct, date, enonce, reponse_donnee, bonne_reponse
          FROM tentatives WHERE joueur = ?1 ORDER BY date DESC LIMIT ?2`
       ).bind('enfant', LIMITE_SUIVI).all(),
-      env.DB.prepare('SELECT COUNT(*) AS nb FROM cours WHERE joueur = ?1').bind('enfant').first()
+      env.DB.prepare('SELECT COUNT(*) AS nb FROM cours WHERE joueur = ?1').bind('enfant').first(),
+      env.DB.prepare(
+        'SELECT matiere, titre, resume, notions, date FROM cours WHERE joueur = ?1 ORDER BY date DESC LIMIT ?2'
+      ).bind('enfant', LIMITE_COURS_SUIVI).all()
     ]);
   } catch {
     return erreur(500, 'Lecture du suivi impossible pour le moment.');
@@ -244,6 +260,7 @@ async function handleSuivi(request, env) {
     profil: profil ?? null,
     tentatives: tentatives.results,
     nbCours: cours?.nb ?? 0,
+    cours: derniersCours.results.map(c => ({ ...c, notions: lireNotions(c.notions) })),
     tronque: tentatives.results.length === LIMITE_SUIVI // l'écran parent le signale : chiffres sur les dernières réponses
   });
 }
