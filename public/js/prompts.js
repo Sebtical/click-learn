@@ -65,7 +65,7 @@ La "fiche" reprend fidèlement le contenu des photos, sans rien inventer : défi
 
 // Le clavier chiffres du téléphone n'a pas de « / » et une réponse numérique refuse « 3/4 » :
 // toute réponse attendue sous forme de fraction doit utiliser le type « fraction ».
-const REGLE_FRACTIONS = 'Si la réponse attendue est une fraction, utilise toujours le type "fraction" (numérateur et dénominateur entiers positifs, la fraction peut ne pas être simplifiée : toute fraction égale sera acceptée) et jamais "num" ; "num" est réservé aux nombres entiers ou décimaux.';
+const REGLE_FRACTIONS = 'Si la réponse attendue est une fraction positive, utilise toujours le type "fraction" (numérateur et dénominateur entiers positifs, la fraction peut ne pas être simplifiée : toute fraction égale sera acceptée) et jamais "num", et écris dans l\'énoncé « Donne le résultat sous forme de fraction ». Si la réponse est une fraction négative, pose plutôt un QCM. "num" est réservé aux nombres entiers ou décimaux.';
 
 // Mise en forme commune des fiches (rendue par texteRicheHtml dans cours.js) : pas de HTML ni de markdown complexe.
 const FORMAT_FICHE = 'Mise en forme : texte simple, une ligne « ## Titre » pour chaque partie, des lignes commençant par « - » pour les listes, **mot** pour mettre en gras un mot important ; aucune autre balise.';

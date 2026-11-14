@@ -303,7 +303,7 @@ async function onGenerateProgramQuiz(subject, difficultyId, difficultyLabel, btn
       subject,
       difficulty: difficultyId,
       createdAt: new Date().toISOString(),
-      questions: parsed.questions.map(questionDepuisIA)
+      questions: questionsDepuisIA(parsed.questions)
     };
     state.quizzes.push(quiz);
     saveState(state);
@@ -413,7 +413,7 @@ async function onGenerateChapterQuiz(subject, chapter, difficultyId, difficultyL
       subject,
       difficulty: difficultyId,
       createdAt: new Date().toISOString(),
-      questions: parsed.questions.map(questionDepuisIA)
+      questions: questionsDepuisIA(parsed.questions)
     };
     state.quizzes.push(quiz);
     saveState(state);
@@ -719,7 +719,8 @@ async function onPlusDeDetails(lesson, btn) {
 // Carte mentale d'un cours : demandée une fois à l'IA, puis gardée sur l'appareil et dessinée par l'appli.
 async function onCarteMentale(lesson, btn) {
   const zone = document.getElementById('carte-zone');
-  if (!lesson.carte) {
+  // Carte faite avant la fiche détaillée : refaite à partir de la fiche, source plus fidèle
+  if (!lesson.carte || (lesson.fiche && lesson.carte.source !== 'fiche')) {
     btn.disabled = true;
     btn.textContent = 'Création de la carte...';
     try {
@@ -728,7 +729,7 @@ async function onCarteMentale(lesson, btn) {
       });
       const carte = validerCarteMentale(reponse);
       if (!carte) throw new Error("réponse de l'IA inutilisable, réessaie");
-      lesson.carte = carte;
+      lesson.carte = { ...carte, source: lesson.fiche ? 'fiche' : 'resume' };
       saveState(state);
     } catch (err) {
       btn.disabled = false;
@@ -737,6 +738,7 @@ async function onCarteMentale(lesson, btn) {
       return;
     }
   }
+  if (!zone.isConnected) return; // écran quitté pendant l'appel : la carte est gardée pour la prochaine fois
   btn.remove();
   zone.innerHTML = carteMentaleHtml(lesson.carte);
   // Enregistrement en image : les images sont préparées dès l'affichage (le bouton attend qu'elles soient prêtes),
@@ -820,7 +822,7 @@ async function onGenerateQuiz(lesson, difficultyId, difficultyLabel, btn) {
       subject: lesson.matiere,
       difficulty: difficultyId,
       createdAt: new Date().toISOString(),
-      questions: parsed.questions.map(questionDepuisIA)
+      questions: questionsDepuisIA(parsed.questions)
     };
     state.quizzes.push(quiz);
     saveState(state);

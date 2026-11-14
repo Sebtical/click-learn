@@ -625,3 +625,25 @@ test("le nom du fichier image d'une carte est simple et sans accents", () => {
   assert.equal(nom(''), 'carte-mentale-cours.png');
   assert.equal(nom(undefined), 'carte-mentale-cours.png');
 });
+
+test("une question « fraction » mal formée d'un quiz IA est écartée, pas transformée en question ouverte", () => {
+  const questions = appli('questionsDepuisIA')([
+    { type: 'fraction', enonce: 'ok', numerateur: 3, denominateur: 4 },
+    { type: 'fraction', enonce: 'négative', numerateur: -3, denominateur: 4 },
+    { type: 'fraction', enonce: 'texte', numerateur: '3', denominateur: 4 },
+    { type: 'qcm', enonce: 'qcm', choix: ['a', 'b'], correctIndex: 0 }
+  ]);
+  assert.deepEqual(questions.map(q => q.enonce), ['ok', 'qcm']);
+  assert.deepEqual(appli('questionsDepuisIA')(undefined).length, 0);
+});
+
+test('le thème central d\'une carte est borné pour ne pas faire déborder la bulle', () => {
+  const carte = appli('validerCarteMentale')({ centre: 'x'.repeat(80), branches: [{ titre: 'a' }, { titre: 'b' }] });
+  assert.equal(carte.centre.length, 40);
+});
+
+test('la consigne fraction demande un énoncé explicite et un QCM pour une fraction négative', () => {
+  const regle = appli('REGLE_FRACTIONS');
+  assert.match(regle, /sous forme de fraction/);
+  assert.match(regle, /négative, pose plutôt un QCM/);
+});

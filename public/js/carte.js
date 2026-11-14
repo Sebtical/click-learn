@@ -7,6 +7,7 @@
 const CARTE_MAX_BRANCHES = 6;
 const CARTE_MAX_ELEMENTS = 5;
 const CARTE_LONGUEUR_MAX = 90; // caractères d'un titre ou d'un élément, au-delà c'est coupé
+const CARTE_CENTRE_MAX = 40;   // caractères du thème central (au-delà, la bulle déborderait)
 const CARTE_POLICE = "'Caveat', 'Segoe Print', 'Bradley Hand', cursive";
 const CARTE_FICHIER_POLICE = 'fonts/caveat-600.woff2'; // embarquée dans l'image enregistrée
 // Couleurs du carnet
@@ -36,7 +37,7 @@ function validerCarteMentale(objet) {
       elements: (Array.isArray(b.elements) ? b.elements : []).map(texte).filter(Boolean).slice(0, CARTE_MAX_ELEMENTS)
     }));
   if (branches.length < 2) return null;
-  return { centre: texte(objet.centre) || 'Mon cours', branches };
+  return { centre: texte(objet.centre).slice(0, CARTE_CENTRE_MAX).trim() || 'Mon cours', branches };
 }
 
 // ── Mise en page ──
@@ -272,7 +273,9 @@ let policeEnMemoire = null; // la police n'est lue et encodée qu'une fois par s
 
 async function policeEmbarquee() {
   if (policeEnMemoire) return policeEnMemoire;
-  const octets = new Uint8Array(await (await fetch(CARTE_FICHIER_POLICE)).arrayBuffer());
+  const reponse = await fetch(CARTE_FICHIER_POLICE);
+  if (!reponse.ok) throw new Error('police introuvable');
+  const octets = new Uint8Array(await reponse.arrayBuffer());
   let binaire = '';
   for (let i = 0; i < octets.length; i += 0x8000) binaire += String.fromCharCode(...octets.subarray(i, i + 0x8000));
   policeEnMemoire = `<defs><style>@font-face{font-family:'Caveat';font-weight:600;src:url(data:font/woff2;base64,${btoa(binaire)}) format('woff2');}</style></defs>`;

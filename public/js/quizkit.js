@@ -116,6 +116,14 @@ function questionDepuisIA(q) {
   return { id: uid(), ...reste };
 }
 
+// Prépare toutes les questions d'un quiz de l'IA ; une question « fraction » mal formée est écartée
+// (sinon elle deviendrait une question ouverte corrigée sans réponse de référence).
+function questionsDepuisIA(liste) {
+  return (Array.isArray(liste) ? liste : [])
+    .filter(q => q?.type !== 'fraction' || estFractionIA(q.numerateur, q.denominateur))
+    .map(questionDepuisIA);
+}
+
 // ── Fabriques de questions ──
 
 // Questions QCM : même format que celui déjà utilisé par les quiz générés par l'IA
