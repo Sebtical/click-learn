@@ -74,9 +74,9 @@ function enregistrerEtPartager() {
 // Le contenu (fiche, carte, explications) ne part qu'une fois le message d'information vu par l'enfant.
 function coursPourPartage(cours) {
   const { id, matiere, titre, resume, notions, date, type } = cours;
-  if (!state.infoContenuVue) return { id, matiere, titre, resume, notions, date, type };
-  const carte = cours.carte ? { centre: cours.carte.centre, branches: cours.carte.branches } : undefined;
-  return { id, matiere, titre, resume, notions, date, type, fiche: cours.fiche, carte, explications: cours.explications };
+  const base = { id, matiere, titre, resume, notions, date, type };
+  if (!state.infoContenuVue) return base;
+  return { ...base, fiche: cours.fiche, carte: cours.carte, explications: cours.explications }; // carte remise en forme par le serveur
 }
 
 // Marque un cours à renvoyer (fiche ou carte ajoutée après coup), sauf si l'enfant a refusé de le partager.
@@ -87,24 +87,15 @@ function aRepartager(cours) {
   cours.version = (cours.version || 0) + 1;
 }
 
-// Une seule fois : renvoie les cours déjà partagés qui ont une fiche, une carte ou des explications
-// créées avant que ce contenu soit partagé (2026-11).
-function repartagerContenuExistant() {
-  if (state.contenuPartage || !state.infoContenuVue) return; // jamais avant le message d'information
-  state.lessons.filter(l => l.fiche || l.carte || l.explications).forEach(aRepartager);
-  state.contenuPartage = true;
-  saveState(state);
-}
-
 // Envoie une liste (réponses ou cours) par lots ; chaque lot accepté est marqué comme partagé.
 // Lève une erreur au premier lot refusé : le reste attendra le prochain envoi.
-async function envoyerParLots(liste, champ, taille = TAILLE_LOT_SYNCHRO) {
+async function envoyerParLots(liste, champ, preparer, taille) {
   for (let i = 0; i < liste.length; i += taille) {
     const lot = liste.slice(i, i + taille);
     const versions = lot.map(objet => objet.version);
     await envoyerResultats(state.accessCode, {
       profil: { prenom: state.profile.prenom, niveau: state.profile.niveau },
-      [champ]: champ === 'tentatives' ? lot.map(enrichirTentative) : lot.map(coursPourPartage)
+      [champ]: lot.map(preparer)
     });
     // Partagé, sauf si l'objet a changé pendant l'envoi (il repartira au prochain passage)
     lot.forEach((objet, k) => { if (objet.version === versions[k]) objet.synchro = true; });
@@ -119,9 +110,8 @@ async function synchroniser() {
   if (synchroEnCours) { synchroARelancer = true; return; }
   synchroEnCours = true;
   try {
-    await envoyerParLots(state.attempts.filter(a => !a.synchro), 'tentatives');
-    repartagerContenuExistant();
-    await envoyerParLots(state.lessons.filter(l => !l.synchro), 'cours', TAILLE_LOT_COURS);
+    await envoyerParLots(state.attempts.filter(a => !a.synchro), 'tentatives', enrichirTentative, TAILLE_LOT_SYNCHRO);
+    await envoyerParLots(state.lessons.filter(l => !l.synchro), 'cours', coursPourPartage, TAILLE_LOT_COURS);
   } catch {
     // Hors ligne ou refus du serveur : nouvel essai au prochain résultat ou au prochain démarrage
   } finally {

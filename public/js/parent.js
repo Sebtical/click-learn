@@ -64,7 +64,9 @@ function dateCourte(iso) {
 // ── Affichage ──
 
 // Construit l'écran de suivi à partir des données du serveur.
-function afficherSuivi({ profil, tentatives, nbCours, cours = [], tronque }) {
+function afficherSuivi({ profil, tentatives, nbCours, cours: coursRecus = [], tronque }) {
+  // Cartes revalidées une seule fois : celle affichée est aussi celle exportée en image
+  const cours = coursRecus.map(c => ({ ...c, carte: validerCarteMentale(c.carte) }));
   // Aucune donnée partagée : on explique comment démarrer
   if (!profil && tentatives.length === 0) {
     app.innerHTML = `
@@ -173,8 +175,7 @@ function afficherSuivi({ profil, tentatives, nbCours, cours = [], tronque }) {
     const c = cours[Number(btn.dataset.i)];
     document.querySelectorAll('.cours-contenu').forEach(zone => { zone.innerHTML = ''; });
     document.getElementById(`cours-contenu-${btn.dataset.i}`).innerHTML = contenuCoursHtml(c, btn.dataset.vue);
-    const carte = btn.dataset.vue === 'carte' ? validerCarteMentale(c.carte) : null;
-    if (carte) brancherExportCarte(carte, c.titre); // même carte que celle affichée
+    if (btn.dataset.vue === 'carte') brancherExportCarte(c.carte, c.titre);
   }));
 }
 
@@ -193,7 +194,6 @@ function boutonsContenuCours(c, i) {
 // Tout passe par les gabarits de cours.js et carte.js, qui échappent les textes.
 function contenuCoursHtml(c, vue) {
   if (vue === 'fiche') return ficheDetailleeHtml({ fiche: c.fiche });
-  if (vue === 'explications') return explicationsHtml(Array.isArray(c.explications) ? c.explications : []);
-  const carte = validerCarteMentale(c.carte);
-  return carte ? carteMentaleHtml(carte) : '<p class="subtitle">Carte illisible.</p>';
+  if (vue === 'explications') return explicationsHtml(c.explications);
+  return carteMentaleHtml(c.carte);
 }

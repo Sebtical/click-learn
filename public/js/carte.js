@@ -99,9 +99,14 @@ function boiteSvg(boite, x, y, largeur) {
 }
 
 // Bulle centrale (titre du cours) centrée sur (cx, cy), avec un brin de feuillage de chaque côté.
-function centreSvg(centre, cx, cy, largeur) {
+// Lignes et hauteur de la bulle centrale pour une largeur donnée.
+function mesureBulle(centre, largeur) {
   const lignes = couperLignes(centre, carParLigne(largeur - 50, 40));
-  const hauteur = 34 + lignes.length * 40;
+  return { lignes, hauteur: 34 + lignes.length * 40 };
+}
+
+function centreSvg(centre, cx, cy, largeur) {
+  const { lignes, hauteur } = mesureBulle(centre, largeur);
   const y0 = cy - hauteur / 2;
   const textes = lignes.map((l, i) =>
     `<text x="${cx}" y="${y0 + 46 + i * 40}" text-anchor="middle" font-size="40" fill="${CARNET.encre}">${echapperHtml(l)}</text>`).join('');
@@ -190,9 +195,10 @@ function boiteInclineeSvg(boite, x, y, largeur, angle) {
 // légèrement ondulé et des flèches courbes (téléphone tenu droit).
 function carteMentalePileSvg(carte, entete = '') {
   const largeur = 380, gauche = 40, droite = 16, larg = largeur - gauche - droite - 30;
-  const hauteurCentre = centreSvg(carte.centre, 0, 0, largeur - gauche - droite).hauteur;
-  const cx = gauche + (largeur - gauche - droite) / 2;
-  const centre = centreSvg(carte.centre, cx, 22 + hauteurCentre / 2, largeur - gauche - droite);
+  const largBulle = largeur - gauche - droite;
+  const hauteurCentre = mesureBulle(carte.centre, largBulle).hauteur;
+  const cx = gauche + largBulle / 2;
+  const centre = centreSvg(carte.centre, cx, 22 + hauteurCentre / 2, largBulle);
   const tronc = gauche + 8;
   let y = 22 + hauteurCentre + 28, boites = '';
   let trait = `M ${tronc} ${22 + hauteurCentre}`, precedent = 22 + hauteurCentre;

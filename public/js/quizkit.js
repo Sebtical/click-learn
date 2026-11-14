@@ -108,20 +108,18 @@ function estFractionIA(numerateur, denominateur) {
 // seul champ affiché sans échappement (réservé aux figures SVG de figures-maths.js).
 // Une question « fraction » devient une question à réponse courte qui accepte toute fraction égale
 // (champ texte : le « / » se tape, contrairement au clavier chiffres d'une question numérique).
+// Une question « fraction » mal formée donne null (elle deviendrait sinon une question ouverte sans réponse).
 function questionDepuisIA(q) {
   const { fig, ...reste } = q || {};
-  if (reste.type === 'fraction' && estFractionIA(reste.numerateur, reste.denominateur)) {
-    return { id: uid(), ...fractionQ(reste.notion, reste.enonce, reste.numerateur, reste.denominateur, reste.pisteReflexion) };
-  }
-  return { id: uid(), ...reste };
+  if (reste.type !== 'fraction') return { id: uid(), ...reste };
+  if (!estFractionIA(reste.numerateur, reste.denominateur)) return null;
+  return { id: uid(), ...fractionQ(reste.notion, reste.enonce, reste.numerateur, reste.denominateur, reste.pisteReflexion) };
 }
 
 // Prépare toutes les questions d'un quiz de l'IA ; une question « fraction » mal formée est écartée
 // (sinon elle deviendrait une question ouverte corrigée sans réponse de référence).
 function questionsDepuisIA(liste) {
-  return (Array.isArray(liste) ? liste : [])
-    .filter(q => q?.type !== 'fraction' || estFractionIA(q.numerateur, q.denominateur))
-    .map(questionDepuisIA);
+  return (Array.isArray(liste) ? liste : []).map(questionDepuisIA).filter(Boolean);
 }
 
 // ── Fabriques de questions ──

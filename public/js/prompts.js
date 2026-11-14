@@ -63,6 +63,9 @@ Tu reçois une ou plusieurs photos d'un même cours ou d'une même leçon (éven
 La "fiche" reprend fidèlement le contenu des photos, sans rien inventer : définitions, règles, méthodes, dates ou formules, et exemples tels qu'ils figurent dans le cours. ${FORMAT_FICHE}`;
 }
 
+// Consigne système des appels qui doivent répondre en JSON.
+const SYSTEME_JSON = 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.';
+
 // Le clavier chiffres du téléphone n'a pas de « / » et une réponse numérique refuse « 3/4 » :
 // toute réponse attendue sous forme de fraction doit utiliser le type « fraction ».
 const REGLE_FRACTIONS = 'Si la réponse attendue est une fraction positive, utilise toujours le type "fraction" (numérateur et dénominateur entiers positifs, la fraction peut ne pas être simplifiée : toute fraction égale sera acceptée) et jamais "num", et écris dans l\'énoncé « Donne le résultat sous forme de fraction ». Si la réponse est une fraction négative, pose plutôt un QCM. "num" est réservé aux nombres entiers ou décimaux.';

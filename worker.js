@@ -17,7 +17,9 @@ const LIMITE_SUIVI = 5000;       // réponses les plus récentes renvoyées à l
 const LIMITE_COURS_SUIVI = 10;   // derniers cours détaillés dans l'espace parent
 const LONGUEUR_MAX_FICHE = 20000; // fiche détaillée d'un cours (quelques pages)
 const LONGUEUR_MAX_EXPLICATION = 6000; // méthode ou exemple d'un cours sur mesure
-const TAILLE_MAX_ENVOI = 2000000;  // caractères d'un envoi /api/sync, refusé au-delà avant toute lecture
+const TAILLE_MAX_ENVOI = 2000000;  // caractères d'un envoi /api/sync, refusé au-delà
+// Limites d'une carte mentale : les mêmes que dans public/js/carte.js (à modifier ensemble)
+const CARTE_MAX_BRANCHES = 6, CARTE_MAX_ELEMENTS = 5, CARTE_LONGUEUR_MAX = 90, CARTE_CENTRE_MAX = 40;
 
 // ── Outils ──
 
@@ -200,17 +202,18 @@ function carteValide(carte) {
   if (!carte || typeof carte !== 'object' || !Array.isArray(carte.branches)) return null;
   const branches = carte.branches
     .filter(b => b && typeof b.titre === 'string' && b.titre.trim())
-    .slice(0, 6)
-    .map(b => ({ titre: b.titre.trim().slice(0, 90), elements: listeTextes(b.elements, 5, 90) }));
+    .slice(0, CARTE_MAX_BRANCHES)
+    .map(b => ({ titre: b.titre.trim().slice(0, CARTE_LONGUEUR_MAX), elements: listeTextes(b.elements, CARTE_MAX_ELEMENTS, CARTE_LONGUEUR_MAX) }));
   if (branches.length < 2) return null;
-  const centre = typeof carte.centre === 'string' ? carte.centre.trim().slice(0, 40) : '';
+  const centre = typeof carte.centre === 'string' ? carte.centre.trim().slice(0, CARTE_CENTRE_MAX).trim() : '';
   return JSON.stringify({ centre: centre || 'Mon cours', branches });
 }
 
 // Explications d'un cours sur mesure reçues : 10 au plus, champs texte bornés, en JSON ; null sinon.
 function explicationsValides(liste) {
   if (!Array.isArray(liste)) return null;
-  const propres = liste.filter(e => e && typeof e === 'object').slice(0, 10).map(e => ({
+  // Comme dans l'appli (validerCoursSurMesure) : une explication sans méthode est écartée
+  const propres = liste.filter(e => e && typeof e === 'object' && typeof e.methode === 'string' && e.methode.trim()).slice(0, 10).map(e => ({
     notion: texteBorne(e.notion, 300) ?? '', erreur: texteBorne(e.erreur) ?? '',
     methode: texteBorne(e.methode, LONGUEUR_MAX_EXPLICATION) ?? '', exemple: texteBorne(e.exemple, LONGUEUR_MAX_EXPLICATION) ?? ''
   }));
@@ -237,6 +240,8 @@ async function handleSync(request, env) {
   if (refus) return refus;
 
   // Lecture et contrôle de la forme générale de l'envoi
+  // Taille annoncée vérifiée avant de lire le corps, puis taille réelle après lecture
+  if (Number(request.headers.get('content-length')) > TAILLE_MAX_ENVOI * 4) return erreur(413, 'Envoi trop volumineux.');
   const texte = await request.text();
   if (texte.length > TAILLE_MAX_ENVOI) return erreur(413, 'Envoi trop volumineux.');
   const envoi = lireObjetJson(texte);
@@ -306,12 +311,8 @@ function lireJson(texte) {
 
 // Décode la liste de notions stockée en JSON ; une valeur illisible donne une liste vide.
 function lireNotions(texte) {
-  try {
-    const notions = JSON.parse(texte);
-    return Array.isArray(notions) ? notions.filter(n => typeof n === 'string') : [];
-  } catch {
-    return [];
-  }
+  const notions = lireJson(texte);
+  return Array.isArray(notions) ? notions.filter(n => typeof n === 'string') : [];
 }
 
 // Renvoie le profil, les dernières réponses, le nombre et le détail des derniers cours de l'enfant ;

@@ -253,7 +253,9 @@ function renderHome() {
   // Branchement des boutons
   document.getElementById('info-contenu-ok')?.addEventListener('click', () => {
     state.infoContenuVue = true;
-    enregistrerEtPartager(); // le contenu déjà créé part maintenant, après le message
+    // Le contenu déjà créé (fiches, cartes, explications) part maintenant, après le message
+    state.lessons.filter(l => l.fiche || l.carte || l.explications).forEach(aRepartager);
+    enregistrerEtPartager();
     renderHome();
   });
   document.getElementById('avatar-btn').addEventListener('click', renderAvatar);
@@ -300,7 +302,7 @@ async function onGenerateProgramQuiz(subject, difficultyId, difficultyLabel, btn
     const parsed = await callClaudeJSON(
       state.accessCode,
       programQuizPrompt(state.profile.niveau, subject, difficultyId, dateStr),
-      { system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 5000 }
+      { system: SYSTEME_JSON, maxTokens: 5000 }
     );
     const quiz = {
       id: uid(),
@@ -341,7 +343,7 @@ async function renderSubjectProgram(subject) {
       const parsed = await callClaudeJSON(
         state.accessCode,
         curriculumPrompt(state.profile.niveau, subject, dateStr),
-        { system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 3000 }
+        { system: SYSTEME_JSON, maxTokens: 3000 }
       );
       state.curriculum[subject] = parsed.chapitres;
       saveState(state);
@@ -410,7 +412,7 @@ async function onGenerateChapterQuiz(subject, chapter, difficultyId, difficultyL
     const parsed = await callClaudeJSON(
       state.accessCode,
       quizGenerationPrompt(state.profile.niveau, subject, difficultyId, chapter),
-      { system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 5000 }
+      { system: SYSTEME_JSON, maxTokens: 5000 }
     );
     const quiz = {
       id: uid(),
@@ -715,12 +717,13 @@ async function onPlusDeDetails(lesson, btn) {
     btn.textContent = 'Rédaction de la fiche...';
     try {
       const reponse = await callClaudeJSON(state.accessCode, ficheDetailleePrompt(state.profile.niveau, lesson), {
-        system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 5000
+        system: SYSTEME_JSON, maxTokens: 5000
       });
       const fiche = lireFiche(reponse?.fiche);
       if (!fiche) throw new Error('fiche vide, réessaie');
       lesson.fiche = fiche;
       lesson.ficheSource = 'resume';
+      delete lesson.carte; // la carte sera refaite à partir de la fiche, source plus fidèle
       aRepartager(lesson); // la fiche rejoint l'espace parent
       enregistrerEtPartager();
     } catch (err) {
@@ -737,17 +740,16 @@ async function onPlusDeDetails(lesson, btn) {
 // Carte mentale d'un cours : demandée une fois à l'IA, puis gardée sur l'appareil et dessinée par l'appli.
 async function onCarteMentale(lesson, btn) {
   const zone = document.getElementById('carte-zone');
-  // Carte faite avant la fiche détaillée : refaite à partir de la fiche, source plus fidèle
-  if (!lesson.carte || (lesson.fiche && lesson.carte.source !== 'fiche')) {
+  if (!lesson.carte) {
     btn.disabled = true;
     btn.textContent = 'Création de la carte...';
     try {
       const reponse = await callClaudeJSON(state.accessCode, carteMentalePrompt(state.profile.niveau, lesson), {
-        system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 2500
+        system: SYSTEME_JSON, maxTokens: 2500
       });
       const carte = validerCarteMentale(reponse);
       if (!carte) throw new Error("réponse de l'IA inutilisable, réessaie");
-      lesson.carte = { ...carte, source: lesson.fiche ? 'fiche' : 'resume' };
+      lesson.carte = carte;
       aRepartager(lesson); // la carte rejoint l'espace parent
       enregistrerEtPartager();
     } catch (err) {
@@ -774,7 +776,7 @@ async function onCoursSurMesure(quizTermine, erreurs, btn) {
     const reponse = await callClaudeJSON(
       state.accessCode,
       coursSurMesurePrompt(state.profile.niveau, quizTermine.subject, erreurs),
-      { system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 6000 }
+      { system: SYSTEME_JSON, maxTokens: 6000 }
     );
     const cours = validerCoursSurMesure(reponse);
     if (!cours) throw new Error("réponse de l'IA inutilisable, réessaie");
@@ -815,7 +817,7 @@ async function onGenerateQuiz(lesson, difficultyId, difficultyLabel, btn) {
     const parsed = await callClaudeJSON(
       state.accessCode,
       quizGenerationPrompt(state.profile.niveau, lesson.matiere, difficultyId, lesson),
-      { system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 5000 }
+      { system: SYSTEME_JSON, maxTokens: 5000 }
     );
     const quiz = {
       id: uid(),

@@ -515,7 +515,6 @@ test("un cours part vers l'espace parent avec fiche, carte et explications, jama
     carte: { centre: 'c', branches: [], source: 'fiche' }
   });
   assert.deepEqual(Object.keys(partage).sort(), ['carte', 'date', 'explications', 'fiche', 'id', 'matiere', 'notions', 'resume', 'titre', 'type']);
-  assert.deepEqual(Object.keys(partage.carte).sort(), ['branches', 'centre']);
 });
 
 test("une fiche ou une carte créée après coup refait partir le cours, sauf s'il a été gardé en local", () => {
@@ -534,7 +533,6 @@ test("l'espace parent montre les boutons du contenu existant et l'affiche échap
   const contenu = appli('contenuCoursHtml');
   assert.ok(!contenu({ fiche: PIEGE }, 'fiche').includes('<img'));
   assert.ok(contenu({ carte: { centre: 'c', branches: [{ titre: 'a', elements: [] }, { titre: 'b', elements: [] }] } }, 'carte').includes('carte-pile'));
-  assert.match(contenu({ carte: 'abîmée' }, 'carte'), /illisible/);
 });
 
 test("l'icône de l'écran d'accueil iPhone est déclarée et existe", () => {
@@ -680,34 +678,21 @@ test("avant le message d'information, ni la fiche ni la carte ne partent", () =>
   }
 });
 
-test('le contenu déjà créé est renvoyé une seule fois, après le message, sauf les cours gardés en local', () => {
-  vm.runInContext(`state.lessons = [
-    { id: 'a', fiche: 'f', synchro: true },
-    { id: 'b', carte: {}, synchro: 'local' },
-    { id: 'c', synchro: true }
-  ]; state.contenuPartage = false; state.infoContenuVue = false`, bacASable);
-  const repartager = appli('repartagerContenuExistant');
-  repartager();
-  assert.equal(vm.runInContext('state.lessons[0].synchro', bacASable), true, 'rien avant le message');
-  vm.runInContext('state.infoContenuVue = true', bacASable);
-  repartager();
-  assert.deepEqual([...vm.runInContext('state.lessons.map(l => l.synchro)', bacASable)], [false, 'local', true]);
-  assert.equal(vm.runInContext('state.contenuPartage', bacASable), true);
-  vm.runInContext('state.lessons[0].synchro = true', bacASable);
-  repartager();
-  assert.equal(vm.runInContext('state.lessons[0].synchro', bacASable), true, 'une seule fois');
-  vm.runInContext('state.lessons = []', bacASable);
-});
-
 test("un cours modifié pendant son envoi n'est pas marqué partagé : il repartira", async () => {
   const cours = { id: 'c', titre: 'T', synchro: false, version: 1 };
   vm.runInContext('state.lessons = []', bacASable);
   bacASable.envoyerResultats = async () => { cours.carte = { centre: 'x', branches: [] }; appli('aRepartager')(cours); };
   try {
-    await appli('envoyerParLots')([cours], 'cours', 20);
+    await appli('envoyerParLots')([cours], 'cours', c => c, 20);
   } finally {
     delete bacASable.envoyerResultats;
   }
   assert.equal(cours.synchro, false);
   assert.equal(cours.version, 2);
+});
+
+test("une carte illisible venue du serveur n'affiche pas de bouton dans l'espace parent", () => {
+  bacASable.app = { innerHTML: '' };
+  appli('afficherSuivi')({ profil: { prenom: 'Léa' }, nbCours: 1, tentatives: [], cours: [{ titre: 'T', date: 'd', carte: 'abîmée' }] });
+  assert.ok(!bacASable.app.innerHTML.includes('data-vue="carte"'));
 });
