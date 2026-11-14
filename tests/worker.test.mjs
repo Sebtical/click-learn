@@ -397,6 +397,17 @@ test("la fiche, la carte et les explications d'un cours remontent au parent, com
   assert.equal((await (await lireSuivi(env)).json()).cours[0].fiche, '## Titre\n- règle');
 });
 
+test("un envoi démesuré est refusé avant d'être lu, et le type d'un ancien cours est complété", async () => {
+  const env = { ...ENV, DB: faireD1() };
+  const reponse = await synchroniser({ cours: [{ id: 'c-1', titre: 'T', date: 'd', fiche: 'x'.repeat(2100000) }] }, env);
+  assert.equal(reponse.status, 413);
+  await synchroniser({ cours: [{ id: 'c-2', titre: 'T', date: '2026-11-14' }] }, env);
+  await synchroniser({ cours: [{ id: 'c-2', titre: 'T', date: '2026-11-14', type: 'sur-mesure', carte: { centre: '  ', branches: [{ titre: ' A ', elements: [' x ', '  '] }, { titre: '   ' }, { titre: 'B' }] } }] }, env);
+  const [c] = (await (await lireSuivi(env)).json()).cours;
+  assert.equal(c.type, 'sur-mesure');
+  assert.deepEqual(c.carte, { centre: 'Mon cours', branches: [{ titre: 'A', elements: ['x'] }, { titre: 'B', elements: [] }] });
+});
+
 test('une carte ou une fiche démesurée est bornée ou refusée par le serveur', async () => {
   const env = { ...ENV, DB: faireD1() };
   await synchroniser({ cours: [{ id: 'c-1', titre: 'T', date: '2026-11-14', fiche: 'x'.repeat(50000), carte: { centre: 'c', branches: 'pas une liste' } }] }, env);

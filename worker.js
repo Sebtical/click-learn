@@ -16,6 +16,8 @@ const LONGUEUR_MAX_TEXTE = 2000; // au-delà, un texte est tronqué avant d'entr
 const LIMITE_SUIVI = 5000;       // réponses les plus récentes renvoyées à l'espace parent
 const LIMITE_COURS_SUIVI = 10;   // derniers cours détaillés dans l'espace parent
 const LONGUEUR_MAX_FICHE = 20000; // fiche détaillée d'un cours (quelques pages)
+const LONGUEUR_MAX_EXPLICATION = 6000; // méthode ou exemple d'un cours sur mesure
+const TAILLE_MAX_ENVOI = 2000000;  // caractères d'un envoi /api/sync, refusé au-delà avant toute lecture
 
 // ── Outils ──
 
@@ -188,16 +190,21 @@ function valeursTentative(t) {
 
 // Liste de textes courts : seulement des chaînes, bornées en nombre et en longueur.
 function listeTextes(valeur, maxElements, maxLongueur) {
-  return (Array.isArray(valeur) ? valeur : []).filter(t => typeof t === 'string').slice(0, maxElements).map(t => t.slice(0, maxLongueur));
+  return (Array.isArray(valeur) ? valeur : []).filter(t => typeof t === 'string')
+    .map(t => t.trim().slice(0, maxLongueur)).filter(Boolean).slice(0, maxElements);
 }
 
 // Carte mentale reçue : remise en forme stricte (centre, 6 branches de 5 éléments au plus), en JSON ; null sinon.
+// Mêmes limites que validerCarteMentale (carte.js) : à modifier aux deux endroits ensemble.
 function carteValide(carte) {
   if (!carte || typeof carte !== 'object' || !Array.isArray(carte.branches)) return null;
-  const branches = carte.branches.filter(b => b && typeof b.titre === 'string').slice(0, 6)
-    .map(b => ({ titre: b.titre.slice(0, 90), elements: listeTextes(b.elements, 5, 90) }));
+  const branches = carte.branches
+    .filter(b => b && typeof b.titre === 'string' && b.titre.trim())
+    .slice(0, 6)
+    .map(b => ({ titre: b.titre.trim().slice(0, 90), elements: listeTextes(b.elements, 5, 90) }));
   if (branches.length < 2) return null;
-  return JSON.stringify({ centre: texteBorne(carte.centre, 40) ?? 'Mon cours', branches });
+  const centre = typeof carte.centre === 'string' ? carte.centre.trim().slice(0, 40) : '';
+  return JSON.stringify({ centre: centre || 'Mon cours', branches });
 }
 
 // Explications d'un cours sur mesure reçues : 10 au plus, champs texte bornés, en JSON ; null sinon.
@@ -205,7 +212,7 @@ function explicationsValides(liste) {
   if (!Array.isArray(liste)) return null;
   const propres = liste.filter(e => e && typeof e === 'object').slice(0, 10).map(e => ({
     notion: texteBorne(e.notion, 300) ?? '', erreur: texteBorne(e.erreur) ?? '',
-    methode: texteBorne(e.methode) ?? '', exemple: texteBorne(e.exemple) ?? ''
+    methode: texteBorne(e.methode, LONGUEUR_MAX_EXPLICATION) ?? '', exemple: texteBorne(e.exemple, LONGUEUR_MAX_EXPLICATION) ?? ''
   }));
   return propres.length ? JSON.stringify(propres) : null;
 }
@@ -214,9 +221,7 @@ function explicationsValides(liste) {
 function valeursCours(c) {
   if (c === null || typeof c !== 'object') return null;
   if (typeof c.id !== 'string' || !c.id || c.id.length > 100 || typeof c.date !== 'string') return null;
-  const notions = Array.isArray(c.notions)
-    ? c.notions.filter(n => typeof n === 'string').map(n => n.slice(0, 300)).slice(0, 50)
-    : [];
+  const notions = listeTextes(c.notions, 50, 300);
   return [
     c.id, texteBorne(c.matiere, 100), texteBorne(c.titre, 300), texteBorne(c.resume),
     JSON.stringify(notions), c.date.slice(0, 40),
@@ -232,7 +237,9 @@ async function handleSync(request, env) {
   if (refus) return refus;
 
   // Lecture et contrôle de la forme générale de l'envoi
-  const envoi = lireObjetJson(await request.text());
+  const texte = await request.text();
+  if (texte.length > TAILLE_MAX_ENVOI) return erreur(413, 'Envoi trop volumineux.');
+  const envoi = lireObjetJson(texte);
   if (envoi === null) return erreur(400, 'Requête invalide.');
   const tentatives = envoi.tentatives ?? [];
   const cours = envoi.cours ?? [];
@@ -260,6 +267,7 @@ async function handleSync(request, env) {
       `INSERT INTO cours (id, joueur, matiere, titre, resume, notions, date, type, fiche, carte, explications)
        VALUES (?1, ?11, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
        ON CONFLICT (id) DO UPDATE SET
+         type = COALESCE(excluded.type, cours.type),
          fiche = COALESCE(excluded.fiche, cours.fiche),
          carte = COALESCE(excluded.carte, cours.carte),
          explications = COALESCE(excluded.explications, cours.explications)

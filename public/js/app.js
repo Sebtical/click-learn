@@ -253,7 +253,7 @@ function renderHome() {
   // Branchement des boutons
   document.getElementById('info-contenu-ok')?.addEventListener('click', () => {
     state.infoContenuVue = true;
-    saveState(state);
+    enregistrerEtPartager(); // le contenu déjà créé part maintenant, après le message
     renderHome();
   });
   document.getElementById('avatar-btn').addEventListener('click', renderAvatar);
@@ -685,8 +685,10 @@ function renderLessonsList() {
 // Message affiché une fois à l'enfant : ses fiches et cartes mentales sont visibles par ses parents.
 function infoContenuHtml() {
   if (state.role !== 'enfant' || state.infoContenuVue) return '';
+  const gardes = state.lessons.some(l => l.synchro === 'local')
+    ? ' Les cours que tu as choisi de garder sur ton téléphone restent privés.' : '';
   return `<section class="card info-contenu">
-        <p>👀 <strong>Nouveau :</strong> tes fiches de cours et tes cartes mentales sont maintenant visibles par tes parents dans leur espace. Tes photos, elles, restent sur ton téléphone.</p>
+        <p>👀 <strong>Nouveau :</strong> tes fiches de cours et tes cartes mentales seront visibles par tes parents dans leur espace. Tes photos, elles, restent sur ton téléphone.${gardes}</p>
         <button id="info-contenu-ok" class="secondary">J'ai compris</button>
       </section>`;
 }

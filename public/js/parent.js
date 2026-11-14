@@ -173,7 +173,8 @@ function afficherSuivi({ profil, tentatives, nbCours, cours = [], tronque }) {
     const c = cours[Number(btn.dataset.i)];
     document.querySelectorAll('.cours-contenu').forEach(zone => { zone.innerHTML = ''; });
     document.getElementById(`cours-contenu-${btn.dataset.i}`).innerHTML = contenuCoursHtml(c, btn.dataset.vue);
-    if (btn.dataset.vue === 'carte') brancherExportCarte(c.carte, c.titre);
+    const carte = btn.dataset.vue === 'carte' ? validerCarteMentale(c.carte) : null;
+    if (carte) brancherExportCarte(carte, c.titre); // même carte que celle affichée
   }));
 }
 
@@ -192,7 +193,7 @@ function boutonsContenuCours(c, i) {
 // Tout passe par les gabarits de cours.js et carte.js, qui échappent les textes.
 function contenuCoursHtml(c, vue) {
   if (vue === 'fiche') return ficheDetailleeHtml({ fiche: c.fiche });
-  if (vue === 'explications') return explicationsHtml(c.explications);
+  if (vue === 'explications') return explicationsHtml(Array.isArray(c.explications) ? c.explications : []);
   const carte = validerCarteMentale(c.carte);
   return carte ? carteMentaleHtml(carte) : '<p class="subtitle">Carte illisible.</p>';
 }

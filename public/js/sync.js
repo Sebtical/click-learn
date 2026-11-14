@@ -71,23 +71,29 @@ function enregistrerEtPartager() {
 
 // Champs d'un cours partagés avec l'espace parent : texte, fiche détaillée, carte mentale, explications
 // d'un cours sur mesure. Jamais les photos, ni les questions du mini-quiz.
+// Le contenu (fiche, carte, explications) ne part qu'une fois le message d'information vu par l'enfant.
 function coursPourPartage(cours) {
-  const { id, matiere, titre, resume, notions, date, type, fiche, explications } = cours;
+  const { id, matiere, titre, resume, notions, date, type } = cours;
+  if (!state.infoContenuVue) return { id, matiere, titre, resume, notions, date, type };
   const carte = cours.carte ? { centre: cours.carte.centre, branches: cours.carte.branches } : undefined;
-  return { id, matiere, titre, resume, notions, date, type, fiche, carte, explications };
+  return { id, matiere, titre, resume, notions, date, type, fiche: cours.fiche, carte, explications: cours.explications };
 }
 
 // Marque un cours à renvoyer (fiche ou carte ajoutée après coup), sauf si l'enfant a refusé de le partager.
+// Le numéro de version évite de perdre un ajout fait pendant un envoi déjà parti (voir envoyerParLots).
 function aRepartager(cours) {
-  if (cours.synchro !== 'local') cours.synchro = false;
+  if (cours.synchro === 'local') return;
+  cours.synchro = false;
+  cours.version = (cours.version || 0) + 1;
 }
 
 // Une seule fois : renvoie les cours déjà partagés qui ont une fiche, une carte ou des explications
 // créées avant que ce contenu soit partagé (2026-11).
 function repartagerContenuExistant() {
-  if (state.contenuPartage) return;
+  if (state.contenuPartage || !state.infoContenuVue) return; // jamais avant le message d'information
   state.lessons.filter(l => l.fiche || l.carte || l.explications).forEach(aRepartager);
   state.contenuPartage = true;
+  saveState(state);
 }
 
 // Envoie une liste (réponses ou cours) par lots ; chaque lot accepté est marqué comme partagé.
@@ -95,11 +101,13 @@ function repartagerContenuExistant() {
 async function envoyerParLots(liste, champ, taille = TAILLE_LOT_SYNCHRO) {
   for (let i = 0; i < liste.length; i += taille) {
     const lot = liste.slice(i, i + taille);
+    const versions = lot.map(objet => objet.version);
     await envoyerResultats(state.accessCode, {
       profil: { prenom: state.profile.prenom, niveau: state.profile.niveau },
       [champ]: champ === 'tentatives' ? lot.map(enrichirTentative) : lot.map(coursPourPartage)
     });
-    lot.forEach(objet => { objet.synchro = true; });
+    // Partagé, sauf si l'objet a changé pendant l'envoi (il repartira au prochain passage)
+    lot.forEach((objet, k) => { if (objet.version === versions[k]) objet.synchro = true; });
     saveState(state);
   }
 }
