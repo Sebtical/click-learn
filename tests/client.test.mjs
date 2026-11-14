@@ -584,7 +584,7 @@ test("les deux dispositions de la carte contiennent tous les textes, échappés"
     for (const mot of ['Simplifier', '6/8 = 3/4', 'Additionner']) assert.ok(svg.includes(mot), `${nom} : ${mot}`);
   }
   assert.match(appli('carteMentalePileSvg')(CARTE), /viewBox="0 0 380 /);
-  assert.match(appli('carteMentaleEtoileSvg')(CARTE), /viewBox="0 0 820 /);
+  assert.match(appli('carteMentaleEtoileSvg')(CARTE), /viewBox="0 0 840 /);
   const bloc = appli('carteMentaleHtml')(CARTE);
   assert.ok(bloc.includes('carte-pile') && bloc.includes('carte-etoile') && bloc.includes('carte-image-btn'));
 });
@@ -595,4 +595,13 @@ test('la carte mentale part de la fiche détaillée si elle existe, sinon du ré
   const sansFiche = prompt('5ème', { matiere: 'SVT', titre: 'T', resume: 'RESUME', notions: ['n'], explications: [{ notion: 'N', methode: 'M' }] });
   assert.ok(sansFiche.includes('RESUME') && sansFiche.includes('- N : M'));
   assert.ok(appli('ficheCoursHtml')({ titre: 'T', matiere: 'SVT', resume: '', notions: [] }, []).includes('id="carte-btn"'));
+});
+
+test("en étoile, chaque flèche part d'un point différent de la bulle", () => {
+  const svg = appli('carteMentaleEtoileSvg')(CARTE);
+  const departs = [...svg.matchAll(/<path d="M ([\d.]+) ([\d.]+) Q[^"]*" [^>]*marker-end/g)].map(m => `${m[1]},${m[2]}`);
+  assert.equal(departs.length, CARTE.branches.length);
+  assert.equal(new Set(departs).size, departs.length, 'aucun départ commun');
+  // Le départ est sur le bord de la bulle : vers la droite, il part du bout droit
+  assert.deepEqual([...appli('bordBulle')(100, 50, 200, 60, 1, 0)], [200, 50]);
 });

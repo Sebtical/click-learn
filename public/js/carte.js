@@ -141,60 +141,105 @@ function enveloppeSvg(largeur, hauteur, contenu, disposition, entete = '') {
     + `${entete}${pageSvg(largeur, hauteur, disposition)}${contenu}</svg>`;
 }
 
-// Flèche fine et courbe du point (x1, y1) au point (x2, y2) ; id : disposition (noms internes distincts).
-function flecheSvg(x1, y1, x2, y2, id) {
-  const mx = (x1 + x2) / 2;
-  return `<path d="M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}" fill="none" stroke="${CARNET.trait}" stroke-width="1.6" marker-end="url(#fleche-${id})"/>`;
+// Flèche fine du point (x1, y1) au point (x2, y2), légèrement bombée d'un côté ou de l'autre
+// (courbure en pixels, signe = côté) pour un effet tracé à la main ; id : disposition.
+function flecheSvg(x1, y1, x2, y2, courbure, id) {
+  const longueur = Math.hypot(x2 - x1, y2 - y1) || 1;
+  const qx = (x1 + x2) / 2 - ((y2 - y1) / longueur) * courbure;
+  const qy = (y1 + y2) / 2 + ((x2 - x1) / longueur) * courbure;
+  return `<path d="M ${arrondi(x1)} ${arrondi(y1)} Q ${arrondi(qx)} ${arrondi(qy)} ${arrondi(x2)} ${arrondi(y2)}" fill="none" stroke="${CARNET.trait}" stroke-width="1.6" stroke-linecap="round" marker-end="url(#fleche-${id})"/>`;
+}
+
+// Arrondi au dixième, pour un SVG lisible.
+function arrondi(n) {
+  return Math.round(n * 10) / 10;
+}
+
+// Point du bord de la bulle (rectangle aux bouts arrondis) de centre (cx, cy), dans la direction (dx, dy) :
+// chaque flèche part ainsi du point de la bulle tourné vers son encadré.
+function bordBulle(cx, cy, largeur, hauteur, dx, dy) {
+  const n = Math.hypot(dx, dy) || 1;
+  const ux = dx / n, uy = dy / n, r = hauteur / 2, demiDroit = largeur / 2 - r;
+  const tPlat = uy !== 0 ? r / Math.abs(uy) : Infinity; // distance jusqu'au bord plat (haut ou bas)
+  if (Math.abs(ux * tPlat) <= demiDroit) return [cx + ux * tPlat, cy + uy * tPlat];
+  // Sinon, bout arrondi : cercle de rayon r centré à ±demiDroit du centre
+  const ox = Math.sign(ux) * demiDroit, b = ux * ox;
+  const t = b + Math.sqrt(Math.max(0, b * b - (ox * ox - r * r)));
+  return [cx + ux * t, cy + uy * t];
+}
+
+// Point du bord d'un encadré (centre bx, by ; demi-largeur, demi-hauteur) dans la direction (dx, dy).
+function bordEncadre(bx, by, demiL, demiH, dx, dy) {
+  const t = Math.min(demiL / Math.max(Math.abs(dx), 1e-9), demiH / Math.max(Math.abs(dy), 1e-9));
+  return [bx + dx * t, by + dy * t];
+}
+
+// Petits écarts « posés à la main » : décalage (px) et inclinaison (degrés) de chaque encadré.
+const CARTE_DECALAGES = [0, 18, 6, 14, 2, 10];
+const CARTE_INCLINAISONS = [-1.4, 1, -0.7, 1.5, -1.1, 0.6];
+
+// Encadré incliné autour de son centre.
+function boiteInclineeSvg(boite, x, y, largeur, angle) {
+  return `<g transform="rotate(${angle} ${arrondi(x + largeur / 2)} ${arrondi(y + boite.hauteur / 2)})">${boiteSvg(boite, x, y, largeur)}</g>`;
 }
 
 // ── Les deux dispositions ──
 
-// Carte « pile » : bulle en haut, encadrés empilés reliés par un trait et des flèches (téléphone tenu droit).
+// Carte « pile » : bulle en haut, encadrés empilés un peu décalés et inclinés, reliés par un trait
+// légèrement ondulé et des flèches courbes (téléphone tenu droit).
 function carteMentalePileSvg(carte, entete = '') {
-  const largeur = 380, gauche = 40, droite = 16, larg = largeur - gauche - droite - 16;
+  const largeur = 380, gauche = 40, droite = 16, larg = largeur - gauche - droite - 30;
   const hauteurCentre = centreSvg(carte.centre, 0, 0, largeur - gauche - droite).hauteur;
   const cx = gauche + (largeur - gauche - droite) / 2;
   const centre = centreSvg(carte.centre, cx, 22 + hauteurCentre / 2, largeur - gauche - droite);
-  let y = 22 + hauteurCentre + 28;
   const tronc = gauche + 8;
-  let boites = '', dernierMilieu = y;
-  carte.branches.forEach(b => {
+  let y = 22 + hauteurCentre + 28, boites = '';
+  let trait = `M ${tronc} ${22 + hauteurCentre}`, precedent = 22 + hauteurCentre;
+  carte.branches.forEach((b, i) => {
     const boite = boiteBranche(b, larg);
-    dernierMilieu = y + 26;
-    boites += flecheSvg(tronc, dernierMilieu, gauche + 16, dernierMilieu, 'pile') + boiteSvg(boite, gauche + 16, y, larg);
-    y += boite.hauteur + 18;
+    const x = gauche + 18 + (i % 2 ? 12 : 0);
+    const milieu = y + 28;
+    // Trait ondulé jusqu'à cet encadré, puis flèche courbe vers lui
+    const mi = arrondi((precedent + milieu) / 2);
+    trait += ` C ${tronc + (i % 2 ? 7 : -5)} ${mi}, ${tronc + (i % 2 ? -5 : 7)} ${mi}, ${tronc} ${milieu}`;
+    precedent = milieu;
+    boites += flecheSvg(tronc, milieu, x - 2, milieu + 4, i % 2 ? 5 : -5, 'pile')
+      + boiteInclineeSvg(boite, x, y, larg, CARTE_INCLINAISONS[i] / 2);
+    y += boite.hauteur + 20;
   });
-  const trait = `<path d="M ${tronc} ${22 + hauteurCentre} V ${dernierMilieu}" stroke="${CARNET.trait}" stroke-width="1.6"/>`;
-  const decor = brinSvg(gauche + 40, y + 76, -30, 1.1)
-    + postitSvg(largeur - droite - 150, y + 6);
-  return enveloppeSvg(largeur, y + 100, trait + centre.svg + boites + decor, 'pile', entete);
+  const tige = `<path d="${trait}" fill="none" stroke="${CARNET.trait}" stroke-width="1.6" stroke-linecap="round"/>`;
+  const decor = brinSvg(gauche + 40, y + 76, -30, 1.1) + postitSvg(largeur - droite - 150, y + 6);
+  return enveloppeSvg(largeur, y + 100, tige + centre.svg + boites + decor, 'pile', entete);
 }
 
-// Carte « étoile » : bulle au milieu, encadrés à gauche et à droite, reliés par des flèches courbes.
+// Carte « étoile » : bulle au milieu, encadrés tout autour, un peu décalés et inclinés ; chaque flèche
+// part du point de la bulle tourné vers son encadré, avec sa propre courbure.
 function carteMentaleEtoileSvg(carte, entete = '') {
-  const largeur = 820, marge = 44, larg = 250, ecart = 20, largCentre = 220;
+  const largeur = 840, marge = 44, larg = 240, ecart = 22, largCentre = 220;
   // Répartition alternée gauche / droite, puis hauteur de chaque colonne
   const colonnes = [[], []];
-  carte.branches.forEach((b, i) => colonnes[i % 2].push(boiteBranche(b, larg)));
-  const hauteurCol = col => col.reduce((h, boite) => h + boite.hauteur, 0) + ecart * (col.length - 1);
-  const hauteur = Math.max(hauteurCol(colonnes[0]), hauteurCol(colonnes[1]), 330) + 52;
+  carte.branches.forEach((b, i) => colonnes[i % 2].push({ boite: boiteBranche(b, larg), i }));
+  const hauteurCol = col => col.reduce((h, e) => h + e.boite.hauteur, 0) + ecart * (col.length - 1);
+  const hauteur = Math.max(hauteurCol(colonnes[0]), hauteurCol(colonnes[1]), 330) + 56;
   const cx = (marge + largeur - 16) / 2, cy = hauteur / 2 - 30;
   const centre = centreSvg(carte.centre, cx, cy, largCentre);
-  // Placement des encadrés (chaque colonne centrée verticalement) et des flèches depuis la bulle
+  // Placement des encadrés (décalés vers le centre selon leur rang) et des flèches depuis le bord de la bulle
   let liens = '', boites = '';
   colonnes.forEach((col, c) => {
-    const x = c === 0 ? marge : largeur - 16 - larg;
     let y = (hauteur - hauteurCol(col)) / 2;
-    for (const boite of col) {
-      const depart = c === 0 ? cx - largCentre / 2 : cx + largCentre / 2;
-      const arrivee = c === 0 ? x + larg + 2 : x - 2;
-      liens += flecheSvg(depart, cy, arrivee, y + boite.hauteur / 2, 'etoile');
-      boites += boiteSvg(boite, x, y, larg);
+    for (const { boite, i } of col) {
+      const decalage = CARTE_DECALAGES[i];
+      const x = c === 0 ? marge + decalage : largeur - 16 - larg - decalage;
+      const bx = x + larg / 2, by = y + boite.hauteur / 2;
+      const [x1, y1] = bordBulle(cx, cy, largCentre, centre.hauteur, bx - cx, by - cy);
+      const [x2, y2] = bordEncadre(bx, by, larg / 2 + 4, boite.hauteur / 2 + 4, cx - bx, cy - by);
+      liens += flecheSvg(x1, y1, x2, y2, (i % 2 ? 1 : -1) * (10 + (i % 3) * 6), 'etoile');
+      boites += boiteInclineeSvg(boite, x, y, larg, CARTE_INCLINAISONS[i]);
       y += boite.hauteur + ecart;
     }
   });
   // Décor dans les espaces libres du milieu : brin au-dessus de la bulle, post-it et brin en dessous
-  const yPostit = cy + centre.hauteur / 2 + 40;
+  const yPostit = cy + centre.hauteur / 2 + 44;
   const decor = brinSvg(cx + 24, 10, 100, 1.1)
     + postitSvg(cx - 70, yPostit)
     + brinSvg(cx + 78, yPostit + 70, -25, 0.9);
