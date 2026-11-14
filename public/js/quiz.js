@@ -5,6 +5,7 @@ let questionRecorded = false;
 let attemptCount = 0;
 const MAX_ATTEMPTS = 2;
 
+// Démarre un quiz : remet les compteurs à zéro et affiche la première question.
 function startQuiz(quiz) {
   currentQuiz = quiz;
   currentQuestionIndex = 0;
@@ -205,6 +206,7 @@ function onNumAnswer() {
   }
 }
 
+// Vérifie une réponse courte (texte normalisé, ou toute fraction égale pour une question « fraction »).
 function onCourtAnswer() {
   const input = document.getElementById('court-answer');
   const raw = input.value.trim();
@@ -294,6 +296,7 @@ function recordAttempt(question, correct, reponseDonnee = null) {
   enregistrerEtPartager();
 }
 
+// Passe à la question suivante, ou au résultat après la dernière.
 function nextQuestion() {
   currentQuestionIndex++;
   if (currentQuestionIndex < currentQuiz.questions.length) {
@@ -303,6 +306,7 @@ function nextQuestion() {
   }
 }
 
+// Écran de résultat : score, notions à retravailler et, s'il y a eu des erreurs, le cours sur mesure.
 function renderQuizResult() {
   const total = sessionResults.length;
   const correctCount = sessionResults.filter(r => r.correct).length;

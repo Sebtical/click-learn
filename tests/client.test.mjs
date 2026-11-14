@@ -605,3 +605,23 @@ test("en étoile, chaque flèche part d'un point différent de la bulle", () => 
   // Le départ est sur le bord de la bulle : vers la droite, il part du bout droit
   assert.deepEqual([...appli('bordBulle')(100, 50, 200, 60, 1, 0)], [200, 50]);
 });
+
+test("le mini-quiz d'un cours sur mesure compte pour le chapitre d'origine, sans figure", () => {
+  const quiz = appli('quizDuCoursSurMesure')({
+    id: 'c1', matiere: 'Maths', themeOrigine: 'fractions',
+    questions: [{ type: 'qcm', enonce: 'Q', choix: ['a', 'b'], correctIndex: 0, fig: '<svg>' }, { type: 'fraction', enonce: 'F', numerateur: 1, denominateur: 2 }]
+  });
+  assert.equal(quiz.theme, 'fractions');
+  assert.equal(quiz.lessonId, 'c1');
+  assert.equal(quiz.subject, 'Maths');
+  assert.equal(quiz.questions[0].fig, undefined);
+  assert.equal(quiz.questions[1].type, 'court');
+  assert.equal(appli('quizDuCoursSurMesure')({ id: 'c2', matiere: 'SVT' }).theme, null);
+});
+
+test("le nom du fichier image d'une carte est simple et sans accents", () => {
+  const nom = appli('nomFichierCarte');
+  assert.equal(nom('Les Fractions égales !'), 'carte-mentale-les-fractions-egales.png');
+  assert.equal(nom(''), 'carte-mentale-cours.png');
+  assert.equal(nom(undefined), 'carte-mentale-cours.png');
+});

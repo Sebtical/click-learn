@@ -676,6 +676,7 @@ function renderLessonsList() {
   document.getElementById('back-home').addEventListener('click', renderHome);
 }
 
+// Fiche d'un cours enregistré, avec ses boutons (détails, carte mentale, mini-quiz, quiz de révision).
 function renderLessonDetail(lesson) {
   app.innerHTML = ficheCoursHtml(lesson, DIFFICULTIES);
 
@@ -738,11 +739,19 @@ async function onCarteMentale(lesson, btn) {
   }
   btn.remove();
   zone.innerHTML = carteMentaleHtml(lesson.carte);
-  // Enregistrement en image : partage du téléphone (Photos) ou téléchargement
-  document.getElementById('carte-image-btn').addEventListener('click', async () => {
-    const info = document.getElementById('carte-image-info');
+  // Enregistrement en image : les images sont préparées dès l'affichage (le bouton attend qu'elles soient prêtes),
+  // pour que le toucher ouvre tout de suite le partage du téléphone (Photos) ; sinon téléchargement
+  const imageBtn = document.getElementById('carte-image-btn');
+  const info = document.getElementById('carte-image-info');
+  let images = null;
+  imageBtn.disabled = true;
+  preparerImagesCarte(lesson.carte)
+    .then(resultat => { images = resultat; imageBtn.disabled = false; })
+    .catch(err => { info.textContent = `Image impossible : ${err.message}`; });
+  imageBtn.addEventListener('click', async () => {
+    if (!images) return;
     try {
-      const mode = await enregistrerCarteImage(lesson.carte, lesson.titre);
+      const mode = await enregistrerCarteImage(images, lesson.titre);
       info.textContent = mode === 'telechargement' ? 'Image téléchargée.' : '';
     } catch (err) {
       if (err.name !== 'AbortError') info.textContent = `Image impossible : ${err.message}`; // AbortError : partage annulé
@@ -783,22 +792,15 @@ async function onCoursSurMesure(quizTermine, erreurs, btn) {
   }
 }
 
-// Mini-quiz d'un cours sur mesure : ses questions, rattachées au chapitre du quiz d'origine.
+// Lance le mini-quiz d'un cours sur mesure (construit par quizDuCoursSurMesure, cours.js).
 function lancerMiniQuiz(lesson) {
-  const quiz = {
-    id: uid(),
-    lessonId: lesson.id,
-    theme: lesson.themeOrigine || null,
-    subject: lesson.matiere,
-    difficulty: 'sur-mesure',
-    createdAt: new Date().toISOString(),
-    questions: lesson.questions.map(questionDepuisIA)
-  };
+  const quiz = quizDuCoursSurMesure(lesson);
   state.quizzes.push(quiz);
   saveState(state);
   startQuiz(quiz);
 }
 
+// Génère avec l'IA un quiz de révision sur un cours enregistré, au niveau de difficulté choisi.
 async function onGenerateQuiz(lesson, difficultyId, difficultyLabel, btn) {
   const errorEl = document.getElementById('quiz-error');
   errorEl.textContent = '';

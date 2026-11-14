@@ -143,6 +143,13 @@ test("une erreur d'Anthropic est relayée telle quelle", async () => {
   assert.equal((await reponse.json()).error.message, 'Overloaded');
 });
 
+test("une coupure réseau vers Anthropic donne un message clair", async () => {
+  globalThis.fetch = async () => { throw new TypeError('network'); };
+  const reponse = await appeler({ max_tokens: 10, messages: MESSAGES });
+  assert.equal(reponse.status, 502);
+  assert.match((await reponse.json()).error.message, /injoignable/);
+});
+
 // ── Rôles : le serveur déduit qui parle à partir du code ──
 // Interroge /api/moi avec un code donné.
 function demanderRole(code, env = ENV, methode = 'GET') {
@@ -357,6 +364,16 @@ test('le code enfant ne peut pas lire l\'espace parent', async () => {
 test('un code inconnu ne peut pas lire l\'espace parent', async () => {
   const reponse = await lireSuivi({ ...ENV, DB: faireD1() }, 'inconnu');
   assert.equal(reponse.status, 401);
+});
+
+test("l'espace parent ne reçoit que les 10 cours les plus récents", async () => {
+  const env = { ...ENV, DB: faireD1() };
+  const cours = Array.from({ length: 12 }, (_, i) => ({ id: `c-${i}`, titre: `T${i}`, date: `2026-11-${String(i + 1).padStart(2, '0')}` }));
+  await synchroniser({ cours }, env);
+  const suivi = await (await lireSuivi(env)).json();
+  assert.equal(suivi.nbCours, 12);
+  assert.equal(suivi.cours.length, 10);
+  assert.equal(suivi.cours[0].titre, 'T11');
 });
 
 test('des notions illisibles en base ne cassent pas le suivi', async () => {

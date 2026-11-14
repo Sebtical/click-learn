@@ -15,6 +15,10 @@ const CARNET = {
   encre: '#2F4A2A', trait: '#5F8752', fond: '#F4F8EE', etiquette: '#D3E6C3',
   bulle: '#E6F0DA', feuille: '#8DB27D', postit: '#E1EFCF', scotch: '#EADFC4'
 };
+// Petits écarts « posés à la main » : décalage (px) et inclinaison (degrés) de chaque encadré.
+const CARTE_DECALAGES = [0, 18, 6, 14, 2, 10];
+const CARTE_INCLINAISONS = [-1.4, 1, -0.7, 1.5, -1.1, 0.6];
+
 // Largeur moyenne d'un caractère de Caveat, en fraction de la taille de police (pour couper les lignes)
 const CAVEAT_LARGEUR = 0.42;
 
@@ -174,10 +178,6 @@ function bordEncadre(bx, by, demiL, demiH, dx, dy) {
   return [bx + dx * t, by + dy * t];
 }
 
-// Petits écarts « posés à la main » : décalage (px) et inclinaison (degrés) de chaque encadré.
-const CARTE_DECALAGES = [0, 18, 6, 14, 2, 10];
-const CARTE_INCLINAISONS = [-1.4, 1, -0.7, 1.5, -1.1, 0.6];
-
 // Encadré incliné autour de son centre.
 function boiteInclineeSvg(boite, x, y, largeur, angle) {
   return `<g transform="rotate(${angle} ${arrondi(x + largeur / 2)} ${arrondi(y + boite.hauteur / 2)})">${boiteSvg(boite, x, y, largeur)}</g>`;
@@ -258,13 +258,25 @@ function carteMentaleHtml(carte) {
 
 // ── Export en image (navigateur) ──
 
+// Nom du fichier image : « carte-mentale-titre-du-cours.png », sans accents ni caractères spéciaux.
+// (L'export lui-même, canvas et partage, ne se vérifie que dans un vrai navigateur.)
+function nomFichierCarte(titre) {
+  const simple = String(titre ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return `carte-mentale-${simple || 'cours'}.png`;
+}
+
 // Bloc de définitions qui embarque la police manuscrite dans le SVG : une image ne peut pas charger
 // de police externe, sans cela l'image enregistrée retomberait sur une police quelconque.
+let policeEnMemoire = null; // la police n'est lue et encodée qu'une fois par session
+
 async function policeEmbarquee() {
+  if (policeEnMemoire) return policeEnMemoire;
   const octets = new Uint8Array(await (await fetch(CARTE_FICHIER_POLICE)).arrayBuffer());
   let binaire = '';
   for (let i = 0; i < octets.length; i += 0x8000) binaire += String.fromCharCode(...octets.subarray(i, i + 0x8000));
-  return `<defs><style>@font-face{font-family:'Caveat';font-weight:600;src:url(data:font/woff2;base64,${btoa(binaire)}) format('woff2');}</style></defs>`;
+  policeEnMemoire = `<defs><style>@font-face{font-family:'Caveat';font-weight:600;src:url(data:font/woff2;base64,${btoa(binaire)}) format('woff2');}</style></defs>`;
+  return policeEnMemoire;
 }
 
 // Convertit un SVG en image PNG (deux fois plus grande, pour rester nette) ; renvoie un Blob.
@@ -290,17 +302,27 @@ function svgEnPng(svgTexte, largeur, hauteur) {
   });
 }
 
-// Enregistre la carte en image : menu de partage du téléphone (« Enregistrer l'image »), sinon téléchargement.
-async function enregistrerCarteImage(carte, titre) {
-  const etoile = window.matchMedia('(min-width: 640px), (orientation: landscape)').matches;
+// Prépare à l'avance les images PNG des deux dispositions (dès que la carte s'affiche) : sur iPhone,
+// le menu de partage doit s'ouvrir juste après le toucher, sans attendre une conversion.
+async function preparerImagesCarte(carte) {
   const entete = await policeEmbarquee();
-  const svg = etoile ? carteMentaleEtoileSvg(carte, entete) : carteMentalePileSvg(carte, entete);
-  const [, l, h] = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
-  const blob = await svgEnPng(svg, Number(l), Number(h));
-  const nom = `carte-mentale-${String(titre).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'cours'}.png`;
+  const enPng = async svg => {
+    const [, l, h] = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
+    return svgEnPng(svg, Number(l), Number(h));
+  };
+  const [pile, etoile] = await Promise.all([enPng(carteMentalePileSvg(carte, entete)), enPng(carteMentaleEtoileSvg(carte, entete))]);
+  return { pile, etoile };
+}
+
+// Enregistre la carte en image (disposition affichée à l'écran) : menu de partage du téléphone
+// (« Enregistrer l'image »), sinon téléchargement. images : résultat de preparerImagesCarte.
+async function enregistrerCarteImage(images, titre) {
+  const etoile = window.matchMedia('(min-width: 640px), (orientation: landscape)').matches;
+  const blob = etoile ? images.etoile : images.pile;
+  const nom = nomFichierCarte(titre);
   const fichier = new File([blob], nom, { type: 'image/png' });
   if (navigator.canShare?.({ files: [fichier] })) {
-    await navigator.share({ files: [fichier], title: titre });
+    await navigator.share({ files: [fichier], title: titre }); // aucun « await » avant : le toucher reste valable
     return 'partage';
   }
   const lien = document.createElement('a');

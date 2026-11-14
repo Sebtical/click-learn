@@ -129,15 +129,21 @@ async function handleClaudeProxy(request, env) {
   const corps = construireCorpsAnthropic(await request.text());
   if (corps === null) return erreur(400, 'Requête invalide.');
 
-  const anthropicResponse = await fetch(ANTHROPIC_URL, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify(corps)
-  });
+  // Appel à Anthropic ; une coupure réseau donne un message clair plutôt qu'une erreur générique
+  let anthropicResponse;
+  try {
+    anthropicResponse = await fetch(ANTHROPIC_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify(corps)
+    });
+  } catch {
+    return erreur(502, "L'IA est injoignable pour le moment. Réessaie dans un instant.");
+  }
 
   // Erreur d'Anthropic (surcharge, quota…) : relayée telle quelle, son format est déjà celui attendu par api.js
   if (!anthropicResponse.ok) {
@@ -146,7 +152,12 @@ async function handleClaudeProxy(request, env) {
       headers: { 'content-type': 'application/json' }
     });
   }
-  const data = await anthropicResponse.json();
+  let data;
+  try {
+    data = await anthropicResponse.json();
+  } catch {
+    return erreur(502, "Réponse de l'IA illisible. Réessaie.");
+  }
   // Consommation de l'appel (nombres de jetons seulement, aucun contenu) : visible dans les journaux du Worker
   console.log('jetons', data.usage?.input_tokens, data.usage?.output_tokens);
   return reponsePourNavigateur(data);

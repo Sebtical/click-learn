@@ -81,6 +81,19 @@ function erreursDuQuiz(resultats) {
     .map(r => ({ notion: r.notion, enonce: r.enonce, reponseDonnee: r.reponseDonnee, bonneReponse: r.bonneReponse }));
 }
 
+// Mini-quiz d'un cours sur mesure : ses questions (via questionDepuisIA), rattachées au chapitre du quiz d'origine.
+function quizDuCoursSurMesure(cours) {
+  return {
+    id: uid(),
+    lessonId: cours.id,
+    theme: cours.themeOrigine || null,
+    subject: cours.matiere,
+    difficulty: 'sur-mesure',
+    createdAt: new Date().toISOString(),
+    questions: (cours.questions || []).map(questionDepuisIA)
+  };
+}
+
 // ── Cours photographié : vérification avant enregistrement ──
 
 // Écran « Vérifie les infos » : matière (liste fermée), titre modifiable, résumé et notions lus par l'IA.

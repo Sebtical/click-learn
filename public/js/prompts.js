@@ -16,6 +16,7 @@ const DIFFICULTIES = [
   }
 ];
 
+// Niveau de difficulté par son identifiant (Entraînement par défaut).
 function difficultyById(id) {
   return DIFFICULTIES.find(d => d.id === id) || DIFFICULTIES[1];
 }
@@ -54,6 +55,7 @@ ${REGLE_FRACTIONS}
 (le tableau "questions" doit contenir exactement ${QUIZ_LENGTH} éléments, ni plus ni moins)`;
 }
 
+// Consigne d'analyse des photos d'un cours : matière, titre, résumé, notions et fiche détaillée fidèle.
 function lessonAnalysisPrompt(niveau, subjects) {
   return `Tu es un assistant pédagogique qui analyse des photos de cours pour un(e) élève de ${niveau} (collège, France).
 Tu reçois une ou plusieurs photos d'un même cours ou d'une même leçon (éventuellement plusieurs pages) : traite-les comme un seul document. Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans balises markdown, au format exact suivant :
@@ -85,6 +87,7 @@ Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdow
 
 // Carte mentale d'un cours : contenu seulement (l'appli la dessine). Source la plus fidèle disponible :
 // la fiche détaillée si elle existe, sinon le résumé, les notions et les explications d'un cours sur mesure.
+// (Utilise CARTE_MAX_BRANCHES et CARTE_MAX_ELEMENTS de carte.js, lues au moment de l'appel.)
 function carteMentalePrompt(niveau, cours) {
   const explications = (cours.explications || []).map(e => `- ${e.notion} : ${e.methode}`).join('\n');
   const source = cours.fiche
@@ -135,6 +138,7 @@ Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdow
  ]}`;
 }
 
+// Consigne de génération d'un quiz de révision à partir d'un cours enregistré.
 function quizGenerationPrompt(niveau, subject, difficultyId, lesson) {
   const { label, guidance } = difficultyById(difficultyId);
   return `Tu es un tuteur pédagogique bienveillant pour un(e) élève de ${niveau} (collège, France), en ${subject}.
@@ -148,6 +152,7 @@ ${calibrationNote(niveau)}
 ${questionSetInstructions()}`;
 }
 
+// Consigne de correction d'une réponse ouverte de l'élève.
 function gradingPrompt(niveau, subject, lesson, question, reponseEleve) {
   const contexte = lesson
     ? `Contenu du cours (résumé) : ${lesson.resume}`
