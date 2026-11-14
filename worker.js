@@ -18,6 +18,9 @@ const LIMITE_COURS_SUIVI = 10;   // derniers cours détaillés dans l'espace par
 const LONGUEUR_MAX_FICHE = 20000; // fiche détaillée d'un cours (quelques pages)
 const LONGUEUR_MAX_EXPLICATION = 6000; // méthode ou exemple d'un cours sur mesure
 const TAILLE_MAX_ENVOI = 2000000;  // caractères d'un envoi /api/sync, refusé au-delà
+const MAX_QUESTIONS_DEFI = 15;     // questions d'un défi (10 en pratique)
+const TAILLE_MAX_QUESTIONS_DEFI = 100000; // caractères du quiz figé d'un défi
+const LIMITE_DEFIS = 30;          // défis les plus récents renvoyés à la liste
 // Limites d'une carte mentale : les mêmes que dans public/js/carte.js (à modifier ensemble)
 const CARTE_MAX_BRANCHES = 6, CARTE_MAX_ELEMENTS = 5, CARTE_LONGUEUR_MAX = 90, CARTE_CENTRE_MAX = 40;
 
@@ -348,6 +351,168 @@ async function handleSuivi(request, env) {
   });
 }
 
+// ── Défis en famille ──
+// Un joueur lance un quiz figé ; chacun le joue quand il veut ; les réponses des autres ne sont
+// visibles qu'après avoir joué soi-même. Le joueur est toujours déduit du code d'accès.
+
+const ROLES = ['enfant', 'parent1', 'parent2'];
+const TYPES_QUESTION_DEFI = ['qcm', 'qcm-multi', 'num', 'court'];
+
+// Questions d'un défi reçues : 1 à 15, types connus, sans figure (seul HTML affiché tel quel),
+// taille totale bornée ; null si inutilisables.
+function questionsDefiValides(liste) {
+  if (!Array.isArray(liste) || liste.length === 0 || liste.length > MAX_QUESTIONS_DEFI) return null;
+  const propres = [];
+  for (const q of liste) {
+    if (!q || typeof q !== 'object' || !TYPES_QUESTION_DEFI.includes(q.type) || typeof q.enonce !== 'string') return null;
+    const { fig, ...sansFigure } = q;
+    propres.push(sansFigure);
+  }
+  const texte = JSON.stringify(propres);
+  return texte.length <= TAILLE_MAX_QUESTIONS_DEFI ? texte : null;
+}
+
+// Réponses d'une participation : une par question au plus, texte court et booléen.
+function reponsesValides(liste, total) {
+  if (!Array.isArray(liste)) return '[]';
+  return JSON.stringify(liste.slice(0, total).map(r => ({
+    reponse: texteBorne(r?.reponse, 300) ?? '',
+    correct: r?.correct === true
+  })));
+}
+
+// Enregistre le surnom du joueur (« Papa »), affiché aux autres dans les défis.
+function ecritureSurnom(env, role, surnom) {
+  return env.DB.prepare(
+    `INSERT INTO profils (role, prenom, maj) VALUES (?1, ?2, ?3)
+     ON CONFLICT (role) DO UPDATE SET prenom = excluded.prenom, maj = excluded.maj`
+  ).bind(role, surnom, new Date().toISOString());
+}
+
+// Surnoms connus de chaque rôle (pour afficher « Papa », « Maman », le prénom de l'enfant).
+async function surnoms(env) {
+  const { results } = await env.DB.prepare('SELECT role, prenom FROM profils').all();
+  return Object.fromEntries(results.map(p => [p.role, p.prenom]));
+}
+
+// Participations d'un défi vues par un joueur : les siennes en entier ; celles des autres avec score
+// et réponses seulement s'il a déjà joué (sinon on sait juste qu'ils ont terminé).
+function participationsVisibles(participations, role) {
+  const aJoue = participations.some(p => p.joueur === role);
+  return participations.map(p => (aJoue || p.joueur === role)
+    ? { joueur: p.joueur, score: p.score, total: p.total, reponses: lireJson(p.reponses) ?? [], termine_le: p.termine_le }
+    : { joueur: p.joueur, termine_le: p.termine_le });
+}
+
+// POST /api/defis : lance un défi (n'importe quel joueur).
+async function creerDefi(request, env, role) {
+  const envoi = lireObjetJson(await request.text());
+  if (envoi === null || typeof envoi.id !== 'string' || !envoi.id || envoi.id.length > 100) return erreur(400, 'Défi invalide.');
+  const questions = questionsDefiValides(envoi.questions);
+  if (questions === null) return erreur(400, 'Questions du défi invalides.');
+  const ecritures = [env.DB.prepare(
+    `INSERT OR IGNORE INTO defis (id, lance_par, matiere, titre, questions, cree_le) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+  ).bind(envoi.id, role, texteBorne(envoi.matiere, 100), texteBorne(envoi.titre, 200), questions, new Date().toISOString())];
+  const surnom = texteBorne(envoi.surnom, 40);
+  if (surnom) ecritures.push(ecritureSurnom(env, role, surnom));
+  try {
+    await env.DB.batch(ecritures);
+  } catch {
+    return erreur(500, 'Enregistrement impossible pour le moment.');
+  }
+  return reponseJson(200, { id: envoi.id });
+}
+
+// GET /api/defis : les derniers défis, avec qui a terminé et ce que ce joueur a le droit de voir.
+async function listerDefis(env, role) {
+  let defis, participations, noms;
+  try {
+    [defis, participations, noms] = await Promise.all([
+      env.DB.prepare('SELECT id, lance_par, matiere, titre, cree_le, questions FROM defis ORDER BY cree_le DESC LIMIT ?1').bind(LIMITE_DEFIS).all(),
+      env.DB.prepare(
+        'SELECT p.* FROM participations p JOIN (SELECT id FROM defis ORDER BY cree_le DESC LIMIT ?1) d ON d.id = p.defi_id'
+      ).bind(LIMITE_DEFIS).all(),
+      surnoms(env)
+    ]);
+  } catch {
+    return erreur(500, 'Lecture des défis impossible pour le moment.');
+  }
+  const liste = defis.results.map(d => {
+    const parts = participations.results.filter(p => p.defi_id === d.id);
+    return {
+      id: d.id, lance_par: d.lance_par, matiere: d.matiere, titre: d.titre, cree_le: d.cree_le,
+      nb_questions: (lireJson(d.questions) ?? []).length,
+      a_joue: parts.some(p => p.joueur === role),
+      participations: participationsVisibles(parts, role).map(({ reponses, ...resume }) => resume)
+    };
+  });
+  return reponseJson(200, { moi: role, surnoms: noms, defis: liste });
+}
+
+// GET /api/defis/:id : le quiz figé et les participations visibles par ce joueur.
+async function lireDefi(env, role, id) {
+  let defi, participations, noms;
+  try {
+    [defi, participations, noms] = await Promise.all([
+      env.DB.prepare('SELECT * FROM defis WHERE id = ?1').bind(id).first(),
+      env.DB.prepare('SELECT * FROM participations WHERE defi_id = ?1').bind(id).all(),
+      surnoms(env)
+    ]);
+  } catch {
+    return erreur(500, 'Lecture du défi impossible pour le moment.');
+  }
+  if (!defi) return erreur(404, 'Défi introuvable.');
+  return reponseJson(200, {
+    moi: role, surnoms: noms,
+    defi: { id: defi.id, lance_par: defi.lance_par, matiere: defi.matiere, titre: defi.titre, cree_le: defi.cree_le, questions: lireJson(defi.questions) ?? [] },
+    participations: participationsVisibles(participations.results, role)
+  });
+}
+
+// POST /api/defis/:id/participation : enregistre le résultat de ce joueur (une seule fois).
+async function participerDefi(request, env, role, id) {
+  const envoi = lireObjetJson(await request.text());
+  if (envoi === null) return erreur(400, 'Participation invalide.');
+  let defi;
+  try {
+    defi = await env.DB.prepare('SELECT questions FROM defis WHERE id = ?1').bind(id).first();
+  } catch {
+    return erreur(500, 'Enregistrement impossible pour le moment.');
+  }
+  if (!defi) return erreur(404, 'Défi introuvable.');
+  const total = (lireJson(defi.questions) ?? []).length;
+  const score = Number.isInteger(envoi.score) ? Math.min(Math.max(envoi.score, 0), total) : null;
+  if (score === null) return erreur(400, 'Score invalide.');
+  const ecritures = [env.DB.prepare(
+    `INSERT OR IGNORE INTO participations (defi_id, joueur, score, total, reponses, termine_le) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+  ).bind(id, role, score, total, reponsesValides(envoi.reponses, total), new Date().toISOString())];
+  const surnom = texteBorne(envoi.surnom, 40);
+  if (surnom) ecritures.push(ecritureSurnom(env, role, surnom));
+  let resultats;
+  try {
+    resultats = await env.DB.batch(ecritures);
+  } catch {
+    return erreur(500, 'Enregistrement impossible pour le moment.');
+  }
+  // INSERT OR IGNORE : aucune ligne écrite = ce joueur avait déjà joué (son premier résultat compte)
+  if (resultats[0]?.meta?.changes === 0) return erreur(409, 'Tu as déjà joué ce défi.');
+  return reponseJson(200, { enregistre: true });
+}
+
+// Aiguillage des routes /api/defis… (tous les joueurs y ont accès).
+async function handleDefis(request, env, chemin) {
+  const morceaux = chemin.split('/').filter(Boolean); // ['api', 'defis', id?, 'participation'?]
+  const id = morceaux[2] ? decodeURIComponent(morceaux[2]) : null;
+  const methode = morceaux.length === 2 && request.method === 'POST' ? 'POST'
+    : morceaux.length === 4 && morceaux[3] === 'participation' ? 'POST' : 'GET';
+  if (morceaux.length > 4 || (morceaux.length === 4 && morceaux[3] !== 'participation')) return erreur(404, 'Route inconnue.');
+  const { role, refus } = await controlerAcces(request, env, methode);
+  if (refus) return refus;
+  if (!id) return methode === 'POST' ? creerDefi(request, env, role) : listerDefis(env, role);
+  if (id.length > 100) return erreur(400, 'Défi invalide.');
+  return morceaux.length === 4 ? participerDefi(request, env, role, id) : lireDefi(env, role, id);
+}
+
 // ── Aiguillage ──
 export default {
   async fetch(request, env) {
@@ -356,6 +521,7 @@ export default {
     if (url.pathname === '/api/parent/suivi') return handleSuivi(request, env);
     if (url.pathname === '/api/sync') return handleSync(request, env);
     if (url.pathname === '/api/claude') return handleClaudeProxy(request, env);
+    if (url.pathname === '/api/defis' || url.pathname.startsWith('/api/defis/')) return handleDefis(request, env, url.pathname);
     return env.ASSETS.fetch(request);
   }
 };

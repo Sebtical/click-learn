@@ -204,7 +204,8 @@ function faireD1() {
   }
   const preparer = (sql, params = []) => ({
     bind: (...valeurs) => preparer(sql, valeurs),
-    run: async () => { db.prepare(sql).run(...params); return { success: true }; },
+    // Comme D1 : une écriture renvoie le nombre de lignes modifiées (meta.changes)
+    run: async () => ({ success: true, meta: { changes: Number(db.prepare(sql).run(...params).changes) } }),
     all: async () => ({ results: db.prepare(sql).all(...params) }),
     first: async () => db.prepare(sql).get(...params) ?? null
   });
@@ -213,8 +214,10 @@ function faireD1() {
     async batch(instructions) {
       db.exec('BEGIN');
       try {
-        for (const instruction of instructions) await instruction.run();
+        const resultats = [];
+        for (const instruction of instructions) resultats.push(await instruction.run());
         db.exec('COMMIT');
+        return resultats; // comme D1 : un résultat par instruction
       } catch (e) {
         db.exec('ROLLBACK');
         throw e;
@@ -448,3 +451,78 @@ for (const [nom, corps] of [
     assert.equal(envois.length, 0);
   });
 }
+
+// ── Défis en famille ──
+
+// Appelle une route des défis avec le code d'un joueur.
+async function defis(env, chemin, { code = ENV.ACCESS_CODE, methode = 'GET', corps } = {}) {
+  const requete = new Request(`https://exemple.test/api/defis${chemin}`, {
+    method: methode,
+    headers: { 'x-access-code': code, 'content-type': 'application/json' },
+    ...(corps !== undefined ? { body: JSON.stringify(corps) } : {})
+  });
+  const reponse = await worker.fetch(requete, env);
+  return { statut: reponse.status, json: await reponse.json() };
+}
+
+const QUESTIONS_DEFI = [
+  { type: 'qcm', notion: 'n', enonce: 'Q1', choix: ['a', 'b'], correctIndex: 0, fig: '<svg onload=alert(1)>' },
+  { type: 'num', notion: 'n', enonce: 'Q2', answer: 3, exacte: true }
+];
+
+test('un parent lance un défi : le serveur fixe le lanceur et retire les figures', async () => {
+  const env = { ...ENV, DB: faireD1() };
+  const cree = await defis(env, '', { code: 'code-parent-un', methode: 'POST', corps: { id: 'd1', matiere: 'Maths', titre: 'Fractions', questions: QUESTIONS_DEFI, surnom: 'Papa', lance_par: 'enfant' } });
+  assert.equal(cree.statut, 200);
+  const { json } = await defis(env, '/d1');
+  assert.equal(json.defi.lance_par, 'parent1');
+  assert.equal(json.defi.questions[0].fig, undefined);
+  assert.equal(json.surnoms.parent1, 'Papa');
+});
+
+test('les questions d\'un défi sont contrôlées', async () => {
+  const env = { ...ENV, DB: faireD1() };
+  for (const questions of [[], 'x', [{ type: 'ouverte', enonce: 'e' }], Array.from({ length: 16 }, () => QUESTIONS_DEFI[1])]) {
+    assert.equal((await defis(env, '', { methode: 'POST', corps: { id: 'd', questions } })).statut, 400);
+  }
+});
+
+test("les réponses des autres ne sont visibles qu'après avoir joué", async () => {
+  const env = { ...ENV, DB: faireD1() };
+  await defis(env, '', { code: 'code-parent-un', methode: 'POST', corps: { id: 'd1', questions: QUESTIONS_DEFI } });
+  await defis(env, '/d1/participation', { code: 'code-parent-un', methode: 'POST', corps: { score: 2, reponses: [{ reponse: 'a', correct: true }, { reponse: '3', correct: true }] } });
+  // L'enfant n'a pas joué : il sait seulement que Papa a terminé
+  let vue = (await defis(env, '/d1')).json;
+  assert.deepEqual(Object.keys(vue.participations[0]).sort(), ['joueur', 'termine_le']);
+  let liste = (await defis(env, '')).json;
+  assert.equal(liste.defis[0].a_joue, false);
+  assert.equal(liste.defis[0].nb_questions, 2);
+  // Après avoir joué, il voit le score et les réponses de Papa
+  await defis(env, '/d1/participation', { methode: 'POST', corps: { score: 1, reponses: [{ reponse: 'b', correct: false }] } });
+  vue = (await defis(env, '/d1')).json;
+  const papa = vue.participations.find(p => p.joueur === 'parent1');
+  assert.equal(papa.score, 2);
+  assert.equal(papa.reponses[0].reponse, 'a');
+  liste = (await defis(env, '')).json;
+  assert.equal(liste.defis[0].a_joue, true);
+  assert.equal(liste.defis[0].participations.find(p => p.joueur === 'parent1').score, 2);
+});
+
+test('un joueur ne participe qu\'une fois, avec un score borné, et le joueur vient du code', async () => {
+  const env = { ...ENV, DB: faireD1() };
+  await defis(env, '', { methode: 'POST', corps: { id: 'd1', questions: QUESTIONS_DEFI } });
+  const premier = await defis(env, '/d1/participation', { methode: 'POST', corps: { score: 99, joueur: 'parent2' } });
+  assert.equal(premier.statut, 200);
+  assert.equal((await defis(env, '/d1/participation', { methode: 'POST', corps: { score: 0 } })).statut, 409);
+  const [p] = (await defis(env, '/d1')).json.participations;
+  assert.equal(p.joueur, 'enfant');
+  assert.equal(p.score, 2, 'score ramené au nombre de questions');
+  assert.equal((await defis(env, '/inconnu/participation', { methode: 'POST', corps: { score: 1 } })).statut, 404);
+  assert.equal((await defis(env, '/d1/participation', { methode: 'POST', corps: { score: 'beaucoup' } })).statut, 400);
+});
+
+test('les défis exigent un code valide', async () => {
+  const env = { ...ENV, DB: faireD1() };
+  assert.equal((await defis(env, '', { code: 'inconnu' })).statut, 401);
+  assert.equal((await defis(env, '/d1/autre')).statut, 404);
+});
