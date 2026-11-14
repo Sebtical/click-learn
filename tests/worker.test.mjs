@@ -14,11 +14,14 @@ const ENV = {
   PARENT_CODE_2: 'code-parent-deux',
   ANTHROPIC_API_KEY: 'cle-de-test'
 };
-const MODELE_SERVEUR = 'claude-haiku-4-5-20251001';
-const PLAFOND = 5000;
+const MODELE_SERVEUR = 'claude-haiku-5-5';
+const PLAFOND = 6000;        // longueur de réponse maximale qu'un navigateur peut demander
+const MARGE_REFLEXION = 2000; // ajoutée par le serveur : la réflexion du modèle compte dans max_tokens
 
 // ── Outils de test ──
 let envois;
+let statutAnthropic;   // réponse simulée d'Anthropic, modifiable par chaque test
+let reponseAnthropic;
 const fetchOriginal = globalThis.fetch;
 
 // Remplace l'appel réseau par un enregistreur : aucun test ne contacte Anthropic.
@@ -26,8 +29,10 @@ beforeEach(() => {
   envois = [];
   globalThis.fetch = async (url, options) => {
     envois.push({ url, options, corps: JSON.parse(options.body) });
-    return new Response('{"content":[]}', { status: 200 });
+    return new Response(JSON.stringify(reponseAnthropic), { status: statutAnthropic });
   };
+  statutAnthropic = 200;
+  reponseAnthropic = { content: [], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } };
 });
 
 afterEach(() => {
@@ -76,25 +81,66 @@ test('le modèle est imposé même si le navigateur n\'en envoie pas', async () 
   assert.equal(envois[0].corps.model, MODELE_SERVEUR);
 });
 
-test('max_tokens au-delà du plafond est ramené au plafond', async () => {
+test('max_tokens au-delà du plafond est ramené au plafond, plus la marge de réflexion', async () => {
   await appeler({ max_tokens: 999999, messages: MESSAGES });
-  assert.equal(envois[0].corps.max_tokens, PLAFOND);
+  assert.equal(envois[0].corps.max_tokens, PLAFOND + MARGE_REFLEXION);
 });
 
-test('max_tokens sous le plafond est conservé', async () => {
+test('max_tokens sous le plafond est conservé, plus la marge de réflexion', async () => {
   await appeler({ max_tokens: 400, messages: MESSAGES });
-  assert.equal(envois[0].corps.max_tokens, 400);
+  assert.equal(envois[0].corps.max_tokens, 400 + MARGE_REFLEXION);
+});
+
+test('la réflexion du modèle est réglée au niveau bas par le serveur', async () => {
+  await appeler({ max_tokens: 10, messages: MESSAGES, output_config: { effort: 'max' } });
+  assert.deepEqual(envois[0].corps.output_config, { effort: 'low' });
 });
 
 test('les champs non prévus ne partent pas chez Anthropic', async () => {
   await appeler({ max_tokens: 10, messages: MESSAGES, tools: [{ name: 'x' }], stream: true, thinking: {} });
-  assert.deepEqual(Object.keys(envois[0].corps).sort(), ['max_tokens', 'messages', 'model']);
+  assert.deepEqual(Object.keys(envois[0].corps).sort(), ['max_tokens', 'messages', 'model', 'output_config']);
 });
 
 test('system et messages sont transmis intacts', async () => {
   await appeler({ max_tokens: 10, system: 'consigne', messages: MESSAGES });
   assert.equal(envois[0].corps.system, 'consigne');
   assert.deepEqual(envois[0].corps.messages, MESSAGES);
+});
+
+// ── Réponse renvoyée au navigateur ──
+test('seuls les blocs de texte reviennent au navigateur, avec la consommation', async () => {
+  reponseAnthropic = {
+    content: [{ type: 'thinking', thinking: '', signature: 'sig' }, { type: 'text', text: '{"a":1}' }],
+    stop_reason: 'end_turn', usage: { input_tokens: 120, output_tokens: 80 }
+  };
+  const reponse = await appeler({ max_tokens: 10, messages: MESSAGES });
+  assert.equal(reponse.status, 200);
+  assert.deepEqual(await reponse.json(), {
+    content: [{ type: 'text', text: '{"a":1}' }],
+    usage: { input_tokens: 120, output_tokens: 80 }
+  });
+});
+
+test('un refus du modèle donne un message clair', async () => {
+  reponseAnthropic = { content: [], stop_reason: 'refusal', usage: {} };
+  const reponse = await appeler({ max_tokens: 10, messages: MESSAGES });
+  assert.equal(reponse.status, 422);
+  assert.match((await reponse.json()).error.message, /refusé/);
+});
+
+test('une réponse coupée faute de place donne un message clair', async () => {
+  reponseAnthropic = { content: [{ type: 'text', text: '{"a":' }], stop_reason: 'max_tokens', usage: {} };
+  const reponse = await appeler({ max_tokens: 10, messages: MESSAGES });
+  assert.equal(reponse.status, 502);
+  assert.match((await reponse.json()).error.message, /trop longue/);
+});
+
+test("une erreur d'Anthropic est relayée telle quelle", async () => {
+  statutAnthropic = 529;
+  reponseAnthropic = { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } };
+  const reponse = await appeler({ max_tokens: 10, messages: MESSAGES });
+  assert.equal(reponse.status, 529);
+  assert.equal((await reponse.json()).error.message, 'Overloaded');
 });
 
 // ── Rôles : le serveur déduit qui parle à partir du code ──

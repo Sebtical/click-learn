@@ -7,8 +7,10 @@
 
 // ── Réglages ──
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MODELE_ANTHROPIC = 'claude-haiku-4-5-20251001';
-const PLAFOND_MAX_TOKENS = 5000; // appel le plus long de l'appli : 5000 (app.js)
+const MODELE_ANTHROPIC = 'claude-haiku-5-5';
+const NIVEAU_REFLEXION = 'low';  // le modèle réfléchit avant de répondre : niveau bas, suffisant pour l'appli
+const PLAFOND_MAX_TOKENS = 6000; // longueur de réponse maximale qu'un navigateur peut demander
+const MARGE_REFLEXION = 2000;    // ajoutée par le serveur : la réflexion compte dans max_tokens
 const TAILLE_MAX_LOT = 200;      // éléments par envoi /api/sync (le navigateur découpe en lots)
 const LONGUEUR_MAX_TEXTE = 2000; // au-delà, un texte est tronqué avant d'entrer en base
 const LIMITE_SUIVI = 5000;       // réponses les plus récentes renvoyées à l'espace parent
@@ -92,7 +94,7 @@ async function controlerAcces(request, env, methode, rolesAutorises = null, mess
   return { role };
 }
 
-// Reconstruit la demande côté serveur : modèle imposé, longueur plafonnée, champs non prévus écartés.
+// Reconstruit la demande côté serveur : modèle et réflexion imposés, longueur plafonnée, champs non prévus écartés.
 // Renvoie null si la demande est invalide, pour la refuser avant tout appel payant.
 function construireCorpsAnthropic(texte) {
   const demande = lireObjetJson(texte);
@@ -100,10 +102,20 @@ function construireCorpsAnthropic(texte) {
   if (!Number.isInteger(demande.max_tokens) || demande.max_tokens <= 0) return null;
   return {
     model: MODELE_ANTHROPIC,
-    max_tokens: Math.min(demande.max_tokens, PLAFOND_MAX_TOKENS),
+    max_tokens: Math.min(demande.max_tokens, PLAFOND_MAX_TOKENS) + MARGE_REFLEXION,
+    output_config: { effort: NIVEAU_REFLEXION },
     ...(demande.system ? { system: demande.system } : {}),
     messages: demande.messages
   };
+}
+
+// Traduit la réponse d'Anthropic pour le navigateur : seulement les blocs de texte et la consommation,
+// ou un message clair si le modèle a refusé ou a manqué de place (le JSON serait alors coupé).
+function reponsePourNavigateur(data) {
+  if (data.stop_reason === 'refusal') return erreur(422, "L'IA a refusé cette demande. Essaie de la reformuler.");
+  if (data.stop_reason === 'max_tokens') return erreur(502, "La réponse de l'IA était trop longue. Réessaie.");
+  const textes = (data.content || []).filter(bloc => bloc.type === 'text').map(bloc => ({ type: 'text', text: bloc.text }));
+  return reponseJson(200, { content: textes, usage: data.usage ?? null });
 }
 
 // ── Proxy ──
@@ -127,10 +139,17 @@ async function handleClaudeProxy(request, env) {
     body: JSON.stringify(corps)
   });
 
-  return new Response(anthropicResponse.body, {
-    status: anthropicResponse.status,
-    headers: { 'content-type': 'application/json' }
-  });
+  // Erreur d'Anthropic (surcharge, quota…) : relayée telle quelle, son format est déjà celui attendu par api.js
+  if (!anthropicResponse.ok) {
+    return new Response(anthropicResponse.body, {
+      status: anthropicResponse.status,
+      headers: { 'content-type': 'application/json' }
+    });
+  }
+  const data = await anthropicResponse.json();
+  // Consommation de l'appel (nombres de jetons seulement, aucun contenu) : visible dans les journaux du Worker
+  console.log('jetons', data.usage?.input_tokens, data.usage?.output_tokens);
+  return reponsePourNavigateur(data);
 }
 
 // ── Profils ──
