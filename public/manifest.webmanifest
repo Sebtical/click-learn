@@ -1,0 +1,17 @@
+{
+  "name": "Click&Learn",
+  "short_name": "Click&Learn",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ECEBFA",
+  "theme_color": "#ECEBFA",
+  "icons": [
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

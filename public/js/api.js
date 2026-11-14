@@ -54,6 +54,38 @@ async function callClaudeJSON(accessCode, content, { maxTokens = 1500, system } 
   return JSON.parse(cleaned);
 }
 
+// ── Notifications et défis ──
+
+// Clé publique du serveur, nécessaire pour abonner ce téléphone aux notifications.
+function demanderCleNotifications(accessCode) {
+  return appelServeur('/api/notifications', accessCode);
+}
+
+// Transmet l'abonnement de ce téléphone (adresse du service de notification et clés).
+function envoyerAbonnement(accessCode, abonnement) {
+  return appelServeur('/api/notifications', accessCode, { methode: 'POST', corps: abonnement });
+}
+
+// Derniers défis de la famille, avec ce que ce joueur a le droit de voir.
+function chargerDefis(accessCode) {
+  return appelServeur('/api/defis', accessCode);
+}
+
+// Un défi : quiz figé et participations visibles.
+function chargerDefi(accessCode, id) {
+  return appelServeur(`/api/defis/${encodeURIComponent(id)}`, accessCode);
+}
+
+// Lance un défi (quiz figé de 10 questions).
+function envoyerDefi(accessCode, defi) {
+  return appelServeur('/api/defis', accessCode, { methode: 'POST', corps: defi });
+}
+
+// Enregistre le résultat de ce joueur à un défi.
+function envoyerParticipation(accessCode, id, participation) {
+  return appelServeur(`/api/defis/${encodeURIComponent(id)}/participation`, accessCode, { methode: 'POST', corps: participation });
+}
+
 // ── Profils, partage et suivi ──
 
 // Demande au serveur le rôle lié à ce code (enfant, parent1, parent2) ; lève une erreur si le code est refusé.

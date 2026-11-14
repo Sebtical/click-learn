@@ -18,6 +18,7 @@ const DEFAULT_STATE = {
   progress: {},
   curriculum: {},
   role: null,
+  notificationsMasquees: false, // carte « Activer les notifications » repoussée par « Plus tard »
   infoContenuVue: false, // message « tes fiches et cartes sont visibles par tes parents » déjà vu
   reprise: null // null = l'enfant n'a pas encore vu l'écran de partage, 'faite' = vu (voir sync.js)
 };

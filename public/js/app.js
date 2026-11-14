@@ -9,6 +9,8 @@ function render() {
   } else {
     renderHome();
     actualiserRole().then(apresRole);
+    // Notifications : service worker toujours enregistré, abonnement vérifié s'il est déjà autorisé
+    enregistrerServiceWorker().then(() => verifierAbonnement(state.accessCode));
   }
 }
 
@@ -212,6 +214,7 @@ function renderHome() {
       </header>
 
       ${infoContenuHtml()}
+      ${carteNotificationsHtml()}
       <section class="level-card${ILLUSTRATIONS.banniere ? ' avec-banniere' : ''}">
         ${banniereHtml()}
         <div class="level-text">
@@ -251,6 +254,22 @@ function renderHome() {
   `;
 
   // Branchement des boutons
+  // Notifications : activation (la demande d'autorisation suit directement le toucher) ou « Plus tard »
+  document.getElementById('notifs-activer')?.addEventListener('click', async e => {
+    e.currentTarget.disabled = true;
+    try {
+      await activerNotifications(state.accessCode);
+      renderHome();
+    } catch (err) {
+      document.getElementById('notifs-erreur').textContent = `Impossible : ${err.message}`;
+      e.currentTarget.disabled = false;
+    }
+  });
+  document.getElementById('notifs-plus-tard')?.addEventListener('click', () => {
+    state.notificationsMasquees = true;
+    saveState(state);
+    renderHome();
+  });
   document.getElementById('info-contenu-ok')?.addEventListener('click', () => {
     state.infoContenuVue = true;
     // Le contenu déjà créé (fiches, cartes, explications) part maintenant, après le message

@@ -9,9 +9,10 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 
-const SCRIPTS = ['storage', 'api', 'prompts', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent', 'quiz', 'cours', 'carte'];
+const SCRIPTS = ['storage', 'api', 'prompts', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent', 'quiz', 'cours', 'carte', 'notifications'];
 const bacASable = vm.createContext({
-  console, setTimeout,
+  console, setTimeout, atob,
+  navigator: {}, // navigateur sans service worker : comme Safari quand l'appli n'est pas installée
   state: { quizzes: [] },
   localStorage: { setItem() {}, getItem() { return null; } } // la sauvegarde est sans effet dans les tests
 });
@@ -695,4 +696,26 @@ test("une carte illisible venue du serveur n'affiche pas de bouton dans l'espace
   bacASable.app = { innerHTML: '' };
   appli('afficherSuivi')({ profil: { prenom: 'Léa' }, nbCours: 1, tentatives: [], cours: [{ titre: 'T', date: 'd', carte: 'abîmée' }] });
   assert.ok(!bacASable.app.innerHTML.includes('data-vue="carte"'));
+});
+
+// ── Notifications ──
+test("sans service worker ni notifications (Safari non installé), rien n'est proposé", () => {
+  assert.equal(appli('etatNotifications')(), 'impossible');
+  assert.equal(appli('carteNotificationsHtml')(), '');
+});
+
+test('la clé du serveur se décode en 65 octets (clé publique P-256)', () => {
+  const cle = Buffer.concat([Buffer.from([4]), Buffer.alloc(64, 7)]).toString('base64url');
+  const octets = appli('octetsBase64Url')(cle);
+  assert.equal(octets.length, 65);
+  assert.equal(octets[0], 4);
+});
+
+test("le service worker affiche le message et pose la pastille, sans rien d'autre", () => {
+  const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  assert.match(sw, /showNotification/);
+  assert.match(sw, /setAppBadge/);
+  assert.doesNotMatch(sw, /caches\./, 'aucun cache : la version en ligne reste toujours la bonne');
+  const manifeste = JSON.parse(readFileSync(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8'));
+  assert.equal(manifeste.display, 'standalone');
 });
