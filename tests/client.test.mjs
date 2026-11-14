@@ -583,8 +583,8 @@ test("les deux dispositions de la carte contiennent tous les textes, échappés"
     assert.equal(svg.split('<text').length, svg.split('</text>').length, `${nom} : balises équilibrées`);
     for (const mot of ['Simplifier', '6/8 = 3/4', 'Additionner']) assert.ok(svg.includes(mot), `${nom} : ${mot}`);
   }
-  assert.match(appli('carteMentalePileSvg')(CARTE), /viewBox="0 0 360 /);
-  assert.match(appli('carteMentaleEtoileSvg')(CARTE), /viewBox="0 0 760 /);
+  assert.match(appli('carteMentalePileSvg')(CARTE), /viewBox="0 0 380 /);
+  assert.match(appli('carteMentaleEtoileSvg')(CARTE), /viewBox="0 0 820 /);
   const bloc = appli('carteMentaleHtml')(CARTE);
   assert.ok(bloc.includes('carte-pile') && bloc.includes('carte-etoile') && bloc.includes('carte-image-btn'));
 });

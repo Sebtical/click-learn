@@ -1113,6 +1113,14 @@ button.avatar {
 }
 
 /* ── Cartes mentales : pile sur téléphone tenu droit, étoile sinon ── */
+/* Écriture manuscrite des cartes (Caveat, licence SIL OFL), hébergée dans l'appli */
+@font-face {
+  font-family: 'Caveat';
+  font-weight: 600;
+  font-display: swap;
+  src: url('../fonts/caveat-600.woff2') format('woff2');
+}
+
 .carte-mentale {
   margin: 14px 0;
   min-width: 0; /* sans cela, la largeur fixe du dessin empêche la fiche de rétrécir */
