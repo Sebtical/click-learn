@@ -211,6 +211,7 @@ function renderHome() {
         </div>
       </header>
 
+      ${infoContenuHtml()}
       <section class="level-card${ILLUSTRATIONS.banniere ? ' avec-banniere' : ''}">
         ${banniereHtml()}
         <div class="level-text">
@@ -250,6 +251,11 @@ function renderHome() {
   `;
 
   // Branchement des boutons
+  document.getElementById('info-contenu-ok')?.addEventListener('click', () => {
+    state.infoContenuVue = true;
+    saveState(state);
+    renderHome();
+  });
   document.getElementById('avatar-btn').addEventListener('click', renderAvatar);
   document.querySelectorAll('.subject-card').forEach(btn => {
     btn.addEventListener('click', () => renderSubjectProgram(btn.dataset.subject));
@@ -676,6 +682,15 @@ function renderLessonsList() {
   document.getElementById('back-home').addEventListener('click', renderHome);
 }
 
+// Message affiché une fois à l'enfant : ses fiches et cartes mentales sont visibles par ses parents.
+function infoContenuHtml() {
+  if (state.role !== 'enfant' || state.infoContenuVue) return '';
+  return `<section class="card info-contenu">
+        <p>👀 <strong>Nouveau :</strong> tes fiches de cours et tes cartes mentales sont maintenant visibles par tes parents dans leur espace. Tes photos, elles, restent sur ton téléphone.</p>
+        <button id="info-contenu-ok" class="secondary">J'ai compris</button>
+      </section>`;
+}
+
 // Fiche d'un cours enregistré, avec ses boutons (détails, carte mentale, mini-quiz, quiz de révision).
 function renderLessonDetail(lesson) {
   app.innerHTML = ficheCoursHtml(lesson, DIFFICULTIES);
@@ -704,7 +719,8 @@ async function onPlusDeDetails(lesson, btn) {
       if (!fiche) throw new Error('fiche vide, réessaie');
       lesson.fiche = fiche;
       lesson.ficheSource = 'resume';
-      saveState(state);
+      aRepartager(lesson); // la fiche rejoint l'espace parent
+      enregistrerEtPartager();
     } catch (err) {
       btn.disabled = false;
       btn.textContent = '📖 Plus de détails';
@@ -730,7 +746,8 @@ async function onCarteMentale(lesson, btn) {
       const carte = validerCarteMentale(reponse);
       if (!carte) throw new Error("réponse de l'IA inutilisable, réessaie");
       lesson.carte = { ...carte, source: lesson.fiche ? 'fiche' : 'resume' };
-      saveState(state);
+      aRepartager(lesson); // la carte rejoint l'espace parent
+      enregistrerEtPartager();
     } catch (err) {
       btn.disabled = false;
       btn.textContent = '🧠 Carte mentale';
@@ -741,24 +758,7 @@ async function onCarteMentale(lesson, btn) {
   if (!zone.isConnected) return; // écran quitté pendant l'appel : la carte est gardée pour la prochaine fois
   btn.remove();
   zone.innerHTML = carteMentaleHtml(lesson.carte);
-  // Enregistrement en image : les images sont préparées dès l'affichage (le bouton attend qu'elles soient prêtes),
-  // pour que le toucher ouvre tout de suite le partage du téléphone (Photos) ; sinon téléchargement
-  const imageBtn = document.getElementById('carte-image-btn');
-  const info = document.getElementById('carte-image-info');
-  let images = null;
-  imageBtn.disabled = true;
-  preparerImagesCarte(lesson.carte)
-    .then(resultat => { images = resultat; imageBtn.disabled = false; })
-    .catch(err => { info.textContent = `Image impossible : ${err.message}`; });
-  imageBtn.addEventListener('click', async () => {
-    if (!images) return;
-    try {
-      const mode = await enregistrerCarteImage(images, lesson.titre);
-      info.textContent = mode === 'telechargement' ? 'Image téléchargée.' : '';
-    } catch (err) {
-      if (err.name !== 'AbortError') info.textContent = `Image impossible : ${err.message}`; // AbortError : partage annulé
-    }
-  });
+  brancherExportCarte(lesson.carte, lesson.titre);
 }
 
 // Cours sur mesure : l'IA explique les erreurs du quiz qui vient de se terminer, puis le cours est

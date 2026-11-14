@@ -1147,3 +1147,14 @@ button.avatar {
   width: 100%;
   margin-top: 12px;
 }
+
+/* ── Espace parent : contenu d'un cours, message d'information de l'enfant ── */
+.cours-contenu:empty { display: none; }
+.cours-contenu { margin-top: 10px; }
+
+.info-contenu {
+  margin-bottom: 14px;
+  background: var(--peach-2);
+}
+
+.info-contenu p { margin: 0 0 10px; }

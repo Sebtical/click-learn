@@ -317,6 +317,28 @@ async function preparerImagesCarte(carte) {
   return { pile, etoile };
 }
 
+// Branche le bouton « Enregistrer en image » d'une carte affichée : images préparées dès l'affichage
+// (le bouton attend qu'elles soient prêtes), pour que le toucher ouvre tout de suite le partage du téléphone.
+function brancherExportCarte(carte, titre) {
+  const imageBtn = document.getElementById('carte-image-btn');
+  const info = document.getElementById('carte-image-info');
+  if (!imageBtn) return;
+  let images = null;
+  imageBtn.disabled = true;
+  preparerImagesCarte(carte)
+    .then(resultat => { images = resultat; imageBtn.disabled = false; })
+    .catch(err => { info.textContent = `Image impossible : ${err.message}`; });
+  imageBtn.addEventListener('click', async () => {
+    if (!images) return;
+    try {
+      const mode = await enregistrerCarteImage(images, titre);
+      info.textContent = mode === 'telechargement' ? 'Image téléchargée.' : '';
+    } catch (err) {
+      if (err.name !== 'AbortError') info.textContent = `Image impossible : ${err.message}`; // AbortError : partage annulé
+    }
+  });
+}
+
 // Enregistre la carte en image (disposition affichée à l'écran) : menu de partage du téléphone
 // (« Enregistrer l'image »), sinon téléchargement. images : résultat de preparerImagesCarte.
 async function enregistrerCarteImage(images, titre) {

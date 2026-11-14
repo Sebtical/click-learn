@@ -111,12 +111,14 @@ function afficherSuivi({ profil, tentatives, nbCours, cours = [], tronque }) {
       <p class="hint">Sa réponse : <strong>${t.reponse_donnee ? echapperHtml(t.reponse_donnee) : '<em>non conservée</em>'}</strong>
         ${t.bonne_reponse ? `<br>Bonne réponse : <strong>${echapperHtml(t.bonne_reponse)}</strong>` : ''}</p>
     </li>`).join('');
-  const lignesCours = cours.map(c => `
+  const lignesCours = cours.map((c, i) => `
     <li class="exercise-item">
-      <p class="subtitle">${dateCourte(c.date)} — ${echapperHtml(c.matiere || 'Cours')}</p>
+      <p class="subtitle">${dateCourte(c.date)} — ${echapperHtml(c.matiere || 'Cours')}${c.type === 'sur-mesure' ? ' · cours sur mesure' : ''}</p>
       <p class="ex-statement">📚 ${echapperHtml(c.titre || '(sans titre)')}</p>
       ${c.resume ? `<p>${echapperHtml(c.resume)}</p>` : ''}
       ${c.notions?.length ? `<p class="hint">Notions : ${echapperHtml(c.notions.join(', '))}</p>` : ''}
+      ${boutonsContenuCours(c, i)}
+      <div class="cours-contenu" id="cours-contenu-${i}"></div>
     </li>`).join('');
   const lignesHistorique = historique.map(h =>
     `<li><span>${dateCourte(h.derniere)} — ${echapperHtml(h.matiere)}</span><span>${h.justes}/${h.total}</span></li>`).join('');
@@ -166,4 +168,31 @@ function afficherSuivi({ profil, tentatives, nbCours, cours = [], tronque }) {
     </div>`;
 
   document.getElementById('parent-back').addEventListener('click', renderHome);
+  // Fiche, explications ou carte d'un cours : une seule visionneuse ouverte à la fois
+  document.querySelectorAll('.voir-contenu').forEach(btn => btn.addEventListener('click', () => {
+    const c = cours[Number(btn.dataset.i)];
+    document.querySelectorAll('.cours-contenu').forEach(zone => { zone.innerHTML = ''; });
+    document.getElementById(`cours-contenu-${btn.dataset.i}`).innerHTML = contenuCoursHtml(c, btn.dataset.vue);
+    if (btn.dataset.vue === 'carte') brancherExportCarte(c.carte, c.titre);
+  }));
+}
+
+// Boutons d'un cours selon ce que l'enfant a créé : fiche, explications (cours sur mesure), carte mentale.
+function boutonsContenuCours(c, i) {
+  const boutons = [];
+  if (c.fiche) boutons.push(['fiche', '📖 Voir la fiche']);
+  if (c.explications?.length) boutons.push(['explications', '✨ Voir les explications']);
+  if (c.carte) boutons.push(['carte', '🧠 Voir la carte mentale']);
+  return boutons.length
+    ? `<div class="actions">${boutons.map(([vue, libelle]) => `<button class="secondary voir-contenu" data-i="${i}" data-vue="${vue}">${libelle}</button>`).join('')}</div>`
+    : '';
+}
+
+// Contenu affiché sous un cours : fiche détaillée, explications d'un cours sur mesure ou carte mentale.
+// Tout passe par les gabarits de cours.js et carte.js, qui échappent les textes.
+function contenuCoursHtml(c, vue) {
+  if (vue === 'fiche') return ficheDetailleeHtml({ fiche: c.fiche });
+  if (vue === 'explications') return explicationsHtml(c.explications);
+  const carte = validerCarteMentale(c.carte);
+  return carte ? carteMentaleHtml(carte) : '<p class="subtitle">Carte illisible.</p>';
 }

@@ -164,7 +164,7 @@ test('les erreurs du serveur restent lisibles, même sans JSON', async () => {
 test('l\'écran parent s\'affiche, échappe les textes et signale la troncature', () => {
   const piege = '<img src=x onerror=alert(1)>';
   bacASable.app = { innerHTML: '' };
-  bacASable.document = { getElementById: () => ({ addEventListener() {} }) };
+  bacASable.document = { getElementById: () => ({ addEventListener() {} }), querySelectorAll: () => [] };
   bacASable.masteryBadge = pct => `${pct}%`; // masteryBadge et renderHome sont dans app.js, non chargé ici
   bacASable.renderHome = () => {};
   const ligne = (id, correct, extra = {}) => ({
@@ -507,12 +507,33 @@ test("la fiche d'un cours sur mesure montre ses explications échappées et le m
   assert.ok(normal.includes('id="fiche-btn"') && !normal.includes('mini-quiz-btn'));
 });
 
-test("seuls titre, matière, résumé, notions et date d'un cours partent vers l'espace parent", () => {
+test("un cours part vers l'espace parent avec fiche, carte et explications, jamais les photos ni le mini-quiz", () => {
   const partage = appli('coursPourPartage')({
-    id: 'c1', matiere: 'SVT', titre: 'T', resume: 'r', notions: ['n'], date: 'd',
-    fiche: 'longue fiche', explications: [{}], questions: [{}], synchro: true, type: 'sur-mesure'
+    id: 'c1', matiere: 'SVT', titre: 'T', resume: 'r', notions: ['n'], date: 'd', photos: ['data:...'],
+    fiche: 'fiche', explications: [{}], questions: [{}], synchro: true, type: 'sur-mesure',
+    carte: { centre: 'c', branches: [], source: 'fiche' }
   });
-  assert.deepEqual(Object.keys(partage).sort(), ['date', 'id', 'matiere', 'notions', 'resume', 'titre']);
+  assert.deepEqual(Object.keys(partage).sort(), ['carte', 'date', 'explications', 'fiche', 'id', 'matiere', 'notions', 'resume', 'titre', 'type']);
+  assert.deepEqual(Object.keys(partage.carte).sort(), ['branches', 'centre']);
+});
+
+test("une fiche ou une carte créée après coup refait partir le cours, sauf s'il a été gardé en local", () => {
+  const aRepartager = appli('aRepartager');
+  const partage = { synchro: true }, local = { synchro: 'local' };
+  aRepartager(partage); aRepartager(local);
+  assert.equal(partage.synchro, false);
+  assert.equal(local.synchro, 'local');
+});
+
+test("l'espace parent montre les boutons du contenu existant et l'affiche échappé", () => {
+  const boutons = appli('boutonsContenuCours');
+  assert.equal(boutons({ titre: 'T' }, 0), '');
+  const tous = boutons({ fiche: 'f', carte: {}, explications: [{}] }, 3);
+  for (const vue of ['fiche', 'carte', 'explications']) assert.ok(tous.includes(`data-vue="${vue}"`), vue);
+  const contenu = appli('contenuCoursHtml');
+  assert.ok(!contenu({ fiche: PIEGE }, 'fiche').includes('<img'));
+  assert.ok(contenu({ carte: { centre: 'c', branches: [{ titre: 'a', elements: [] }, { titre: 'b', elements: [] }] } }, 'carte').includes('carte-pile'));
+  assert.match(contenu({ carte: 'abîmée' }, 'carte'), /illisible/);
 });
 
 test("l'icône de l'écran d'accueil iPhone est déclarée et existe", () => {

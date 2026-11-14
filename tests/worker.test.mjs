@@ -3,7 +3,7 @@
 
 // ── Imports et réglages ──
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, test } from 'node:test';
 import worker from '../worker.js';
@@ -198,7 +198,10 @@ test('un code parent peut aussi utiliser le proxy', async () => {
 // Fausse base D1 : vraie base SQLite en mémoire, avec la même structure que la production.
 function faireD1() {
   const db = new DatabaseSync(':memory:');
-  db.exec(readFileSync(new URL('../migrations/0001_init.sql', import.meta.url), 'utf8'));
+  // Toutes les migrations, dans l'ordre, comme wrangler les applique
+  for (const fichier of readdirSync(new URL('../migrations/', import.meta.url)).filter(f => f.endsWith('.sql')).sort()) {
+    db.exec(readFileSync(new URL(`../migrations/${fichier}`, import.meta.url), 'utf8'));
+  }
   const preparer = (sql, params = []) => ({
     bind: (...valeurs) => preparer(sql, valeurs),
     run: async () => { db.prepare(sql).run(...params); return { success: true }; },
@@ -349,7 +352,10 @@ test('chaque parent lit le profil, les réponses et les cours de l\'enfant', asy
     assert.equal(suivi.nbCours, 2);
     // Derniers cours, plus récent d'abord, notions déjà décodées ; jamais de photo
     assert.deepEqual(suivi.cours.map(c => c.titre), ['Fractions', 'La cellule']);
-    assert.deepEqual(suivi.cours[1], { matiere: 'SVT', titre: 'La cellule', resume: 'Tout être vivant…', notions: ['noyau', 'membrane'], date: '2026-11-10' });
+    assert.deepEqual(suivi.cours[1], {
+      matiere: 'SVT', titre: 'La cellule', resume: 'Tout être vivant…', notions: ['noyau', 'membrane'], date: '2026-11-10',
+      type: null, fiche: null, carte: null, explications: []
+    });
     assert.deepEqual(suivi.cours[0].notions, []);
     assert.deepEqual(suivi.tentatives.map(t => t.id), ['id-2', 'id-1']); // plus récente d'abord
     assert.equal(suivi.tentatives[1].reponse_donnee, '2/3');
@@ -374,6 +380,29 @@ test("l'espace parent ne reçoit que les 10 cours les plus récents", async () =
   assert.equal(suivi.nbCours, 12);
   assert.equal(suivi.cours.length, 10);
   assert.equal(suivi.cours[0].titre, 'T11');
+});
+
+test("la fiche, la carte et les explications d'un cours remontent au parent, complétées après coup", async () => {
+  const env = { ...ENV, DB: faireD1() };
+  const base = { id: 'c-1', matiere: 'Maths', titre: 'Fractions', date: '2026-11-14' };
+  await synchroniser({ cours: [base] }, env);
+  const carte = { centre: 'Fractions', branches: [{ titre: 'A', elements: ['x', 4] }, { titre: 'B', elements: [] }], source: 'fiche' };
+  await synchroniser({ cours: [{ ...base, type: 'sur-mesure', fiche: '## Titre\n- règle', carte, explications: [{ notion: 'n', methode: 'm' }] }] }, env);
+  const [c] = (await (await lireSuivi(env)).json()).cours;
+  assert.equal(c.fiche, '## Titre\n- règle');
+  assert.deepEqual(c.carte, { centre: 'Fractions', branches: [{ titre: 'A', elements: ['x'] }, { titre: 'B', elements: [] }] });
+  assert.deepEqual(c.explications, [{ notion: 'n', erreur: '', methode: 'm', exemple: '' }]);
+  // Un envoi sans fiche n'efface pas la fiche déjà reçue
+  await synchroniser({ cours: [base] }, env);
+  assert.equal((await (await lireSuivi(env)).json()).cours[0].fiche, '## Titre\n- règle');
+});
+
+test('une carte ou une fiche démesurée est bornée ou refusée par le serveur', async () => {
+  const env = { ...ENV, DB: faireD1() };
+  await synchroniser({ cours: [{ id: 'c-1', titre: 'T', date: '2026-11-14', fiche: 'x'.repeat(50000), carte: { centre: 'c', branches: 'pas une liste' } }] }, env);
+  const [c] = (await (await lireSuivi(env)).json()).cours;
+  assert.equal(c.fiche.length, 20000);
+  assert.equal(c.carte, null);
 });
 
 test('des notions illisibles en base ne cassent pas le suivi', async () => {

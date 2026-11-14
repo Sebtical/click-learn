@@ -4,6 +4,7 @@
 
 // ── Réglages ──
 const TAILLE_LOT_SYNCHRO = 200; // ≤ TAILLE_MAX_LOT dans worker.js (vérifié par tests/client.test.mjs)
+const TAILLE_LOT_COURS = 20; // un cours peut porter une fiche de plusieurs pages : lots plus petits
 let synchroEnCours = false;
 let synchroARelancer = false; // une réponse est arrivée pendant un envoi : relancer à la fin
 
@@ -68,17 +69,32 @@ function enregistrerEtPartager() {
   synchroniser();
 }
 
-// Champs d'un cours partagés avec l'espace parent (jamais la fiche détaillée, les explications ni les photos).
+// Champs d'un cours partagés avec l'espace parent : texte, fiche détaillée, carte mentale, explications
+// d'un cours sur mesure. Jamais les photos, ni les questions du mini-quiz.
 function coursPourPartage(cours) {
-  const { id, matiere, titre, resume, notions, date } = cours;
-  return { id, matiere, titre, resume, notions, date };
+  const { id, matiere, titre, resume, notions, date, type, fiche, explications } = cours;
+  const carte = cours.carte ? { centre: cours.carte.centre, branches: cours.carte.branches } : undefined;
+  return { id, matiere, titre, resume, notions, date, type, fiche, carte, explications };
+}
+
+// Marque un cours à renvoyer (fiche ou carte ajoutée après coup), sauf si l'enfant a refusé de le partager.
+function aRepartager(cours) {
+  if (cours.synchro !== 'local') cours.synchro = false;
+}
+
+// Une seule fois : renvoie les cours déjà partagés qui ont une fiche, une carte ou des explications
+// créées avant que ce contenu soit partagé (2026-11).
+function repartagerContenuExistant() {
+  if (state.contenuPartage) return;
+  state.lessons.filter(l => l.fiche || l.carte || l.explications).forEach(aRepartager);
+  state.contenuPartage = true;
 }
 
 // Envoie une liste (réponses ou cours) par lots ; chaque lot accepté est marqué comme partagé.
 // Lève une erreur au premier lot refusé : le reste attendra le prochain envoi.
-async function envoyerParLots(liste, champ) {
-  for (let i = 0; i < liste.length; i += TAILLE_LOT_SYNCHRO) {
-    const lot = liste.slice(i, i + TAILLE_LOT_SYNCHRO);
+async function envoyerParLots(liste, champ, taille = TAILLE_LOT_SYNCHRO) {
+  for (let i = 0; i < liste.length; i += taille) {
+    const lot = liste.slice(i, i + taille);
     await envoyerResultats(state.accessCode, {
       profil: { prenom: state.profile.prenom, niveau: state.profile.niveau },
       [champ]: champ === 'tentatives' ? lot.map(enrichirTentative) : lot.map(coursPourPartage)
@@ -96,7 +112,8 @@ async function synchroniser() {
   synchroEnCours = true;
   try {
     await envoyerParLots(state.attempts.filter(a => !a.synchro), 'tentatives');
-    await envoyerParLots(state.lessons.filter(l => !l.synchro), 'cours');
+    repartagerContenuExistant();
+    await envoyerParLots(state.lessons.filter(l => !l.synchro), 'cours', TAILLE_LOT_COURS);
   } catch {
     // Hors ligne ou refus du serveur : nouvel essai au prochain résultat ou au prochain démarrage
   } finally {

@@ -15,6 +15,7 @@ const TAILLE_MAX_LOT = 200;      // éléments par envoi /api/sync (le navigateu
 const LONGUEUR_MAX_TEXTE = 2000; // au-delà, un texte est tronqué avant d'entrer en base
 const LIMITE_SUIVI = 5000;       // réponses les plus récentes renvoyées à l'espace parent
 const LIMITE_COURS_SUIVI = 10;   // derniers cours détaillés dans l'espace parent
+const LONGUEUR_MAX_FICHE = 20000; // fiche détaillée d'un cours (quelques pages)
 
 // ── Outils ──
 
@@ -185,7 +186,31 @@ function valeursTentative(t) {
   ];
 }
 
-// Valide un résumé de cours ; renvoie les valeurs à insérer, ou null s'il est inutilisable.
+// Liste de textes courts : seulement des chaînes, bornées en nombre et en longueur.
+function listeTextes(valeur, maxElements, maxLongueur) {
+  return (Array.isArray(valeur) ? valeur : []).filter(t => typeof t === 'string').slice(0, maxElements).map(t => t.slice(0, maxLongueur));
+}
+
+// Carte mentale reçue : remise en forme stricte (centre, 6 branches de 5 éléments au plus), en JSON ; null sinon.
+function carteValide(carte) {
+  if (!carte || typeof carte !== 'object' || !Array.isArray(carte.branches)) return null;
+  const branches = carte.branches.filter(b => b && typeof b.titre === 'string').slice(0, 6)
+    .map(b => ({ titre: b.titre.slice(0, 90), elements: listeTextes(b.elements, 5, 90) }));
+  if (branches.length < 2) return null;
+  return JSON.stringify({ centre: texteBorne(carte.centre, 40) ?? 'Mon cours', branches });
+}
+
+// Explications d'un cours sur mesure reçues : 10 au plus, champs texte bornés, en JSON ; null sinon.
+function explicationsValides(liste) {
+  if (!Array.isArray(liste)) return null;
+  const propres = liste.filter(e => e && typeof e === 'object').slice(0, 10).map(e => ({
+    notion: texteBorne(e.notion, 300) ?? '', erreur: texteBorne(e.erreur) ?? '',
+    methode: texteBorne(e.methode) ?? '', exemple: texteBorne(e.exemple) ?? ''
+  }));
+  return propres.length ? JSON.stringify(propres) : null;
+}
+
+// Valide un cours ; renvoie les valeurs à insérer, ou null s'il est inutilisable.
 function valeursCours(c) {
   if (c === null || typeof c !== 'object') return null;
   if (typeof c.id !== 'string' || !c.id || c.id.length > 100 || typeof c.date !== 'string') return null;
@@ -194,7 +219,9 @@ function valeursCours(c) {
     : [];
   return [
     c.id, texteBorne(c.matiere, 100), texteBorne(c.titre, 300), texteBorne(c.resume),
-    JSON.stringify(notions), c.date.slice(0, 40)
+    JSON.stringify(notions), c.date.slice(0, 40),
+    c.type === 'sur-mesure' ? 'sur-mesure' : null, texteBorne(c.fiche, LONGUEUR_MAX_FICHE),
+    carteValide(c.carte), explicationsValides(c.explications)
   ];
 }
 
@@ -213,7 +240,7 @@ async function handleSync(request, env) {
   if (tentatives.length + cours.length > TAILLE_MAX_LOT) return erreur(400, 'Envoi trop volumineux.');
 
   // Préparation des écritures : les éléments invalides sont écartés et comptés.
-  // Le rôle est toujours lié en dernier : ?13 pour les réponses, ?7 pour les cours.
+  // Le rôle est toujours lié en dernier : ?13 pour les réponses, ?11 pour les cours.
   const ecritures = [];
   let ignores = 0;
   for (const t of tentatives) {
@@ -229,8 +256,14 @@ async function handleSync(request, env) {
     const valeurs = valeursCours(c);
     if (valeurs === null) { ignores++; continue; }
     ecritures.push(env.DB.prepare(
-      `INSERT OR IGNORE INTO cours (id, joueur, matiere, titre, resume, notions, date)
-       VALUES (?1, ?7, ?2, ?3, ?4, ?5, ?6)`
+      // Un cours déjà reçu est complété (fiche ou carte créées après coup), seulement pour le même joueur
+      `INSERT INTO cours (id, joueur, matiere, titre, resume, notions, date, type, fiche, carte, explications)
+       VALUES (?1, ?11, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+       ON CONFLICT (id) DO UPDATE SET
+         fiche = COALESCE(excluded.fiche, cours.fiche),
+         carte = COALESCE(excluded.carte, cours.carte),
+         explications = COALESCE(excluded.explications, cours.explications)
+       WHERE cours.joueur = excluded.joueur`
     ).bind(...valeurs, role));
   }
 
@@ -253,6 +286,15 @@ async function handleSync(request, env) {
 }
 
 // ── Espace parent ──
+
+// Décode un objet stocké en JSON ; une valeur absente ou illisible donne null.
+function lireJson(texte) {
+  try {
+    return texte ? JSON.parse(texte) : null;
+  } catch {
+    return null;
+  }
+}
 
 // Décode la liste de notions stockée en JSON ; une valeur illisible donne une liste vide.
 function lireNotions(texte) {
@@ -280,7 +322,7 @@ async function handleSuivi(request, env) {
       ).bind('enfant', LIMITE_SUIVI).all(),
       env.DB.prepare('SELECT COUNT(*) AS nb FROM cours WHERE joueur = ?1').bind('enfant').first(),
       env.DB.prepare(
-        'SELECT matiere, titre, resume, notions, date FROM cours WHERE joueur = ?1 ORDER BY date DESC LIMIT ?2'
+        'SELECT matiere, titre, resume, notions, date, type, fiche, carte, explications FROM cours WHERE joueur = ?1 ORDER BY date DESC LIMIT ?2'
       ).bind('enfant', LIMITE_COURS_SUIVI).all()
     ]);
   } catch {
@@ -290,7 +332,9 @@ async function handleSuivi(request, env) {
     profil: profil ?? null,
     tentatives: tentatives.results,
     nbCours: cours?.nb ?? 0,
-    cours: derniersCours.results.map(c => ({ ...c, notions: lireNotions(c.notions) })),
+    cours: derniersCours.results.map(c => ({
+      ...c, notions: lireNotions(c.notions), carte: lireJson(c.carte), explications: lireJson(c.explications) ?? []
+    })),
     tronque: tentatives.results.length === LIMITE_SUIVI // l'écran parent le signale : chiffres sur les dernières réponses
   });
 }
