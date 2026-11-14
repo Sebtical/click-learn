@@ -12,65 +12,79 @@ function startQuiz(quiz) {
   renderQuizQuestion();
 }
 
+// ── Fabrication du HTML (fonctions pures, testées) ──
+// Règle dure : tout texte d'une question (écrit par l'IA ou un générateur) est échappé.
+// Seule exception : la figure SVG (q.fig), produite uniquement par figures-maths.js, jamais par l'IA.
+
+// Zone de réponse propre à chaque type de question.
+function zoneReponseHtml(q) {
+  if (q.type === 'qcm') {
+    return `<div id="choices" class="choices">
+          ${q.choix.map((c, i) => `<button class="choice-btn" data-i="${i}">${echapperHtml(c)}</button>`).join('')}
+        </div>`;
+  }
+  if (q.type === 'qcm-multi') {
+    return `<div id="choices" class="choices">
+          ${q.choix.map((c, i) => `
+            <label class="choice-check">
+              <input type="checkbox" value="${i}">
+              <span>${echapperHtml(c)}</span>
+            </label>`).join('')}
+        </div>
+        <button id="submit-multi">Valider</button>`;
+  }
+  if (q.type === 'num') {
+    return `<div class="num-answer">
+          <button type="button" id="toggle-signe" class="secondary signe-btn" aria-label="Changer le signe">±</button>
+          <input type="text" inputmode="decimal" id="num-answer" placeholder="Ta réponse">
+          ${q.unit ? `<span class="unit">${echapperHtml(q.unit)}</span>` : ''}
+        </div>
+        <button id="submit-num">Valider</button>`;
+  }
+  if (q.type === 'court') {
+    return `<input type="text" id="court-answer" placeholder="Ta réponse">
+        <button id="submit-court">Valider</button>`;
+  }
+  return `<textarea id="open-answer" rows="4" placeholder="Ta réponse..."></textarea>
+        <button id="submit-open">Valider</button>`;
+}
+
+// Écran complet d'une question : barre du haut, énoncé, figure éventuelle, zone de réponse.
+function questionHtml(q, progress) {
+  return `
+      <div class="card card-wide">
+        <div class="quiz-topbar">
+          <p class="progress">${progress} — ${echapperHtml(q.notion)}</p>
+          <button id="quit-quiz" class="link">✕ Quitter</button>
+        </div>
+        <h2>${echapperHtml(q.enonce)}</h2>
+        ${q.fig ? `<div class="fig">${q.fig}</div>` : ''}
+        ${zoneReponseHtml(q)}
+        <div id="feedback"></div>
+      </div>`;
+}
+
+// Message après une mauvaise réponse, avec la bonne réponse si les essais sont épuisés.
+function indiceHtml(pisteReflexion, bonneReponse = null) {
+  const piste = `<p class="hint">Pas tout à fait... 🤔<br>${echapperHtml(pisteReflexion)}</p>`;
+  return bonneReponse === null
+    ? `${piste}<p class="subtitle">Réessaie !</p>`
+    : `${piste}<p class="hint">La bonne réponse était : <strong>${echapperHtml(bonneReponse)}</strong></p><button id="next-q">Suivant</button>`;
+}
+
+// ── Affichage d'une question et branchement de ses boutons ──
 function renderQuizQuestion() {
   questionRecorded = false;
   attemptCount = 0;
   const q = currentQuiz.questions[currentQuestionIndex];
   const progress = `Question ${currentQuestionIndex + 1}/${currentQuiz.questions.length}`;
-  const figHtml = q.fig ? `<div class="fig">${q.fig}</div>` : '';
+  app.innerHTML = questionHtml(q, progress);
 
   if (q.type === 'qcm') {
-    app.innerHTML = `
-      <div class="card card-wide">
-        <div class="quiz-topbar">
-          <p class="progress">${progress} — ${q.notion}</p>
-          <button id="quit-quiz" class="link">✕ Quitter</button>
-        </div>
-        <h2>${q.enonce}</h2>
-        ${figHtml}
-        <div id="choices" class="choices">
-          ${q.choix.map((c, i) => `<button class="choice-btn" data-i="${i}">${c}</button>`).join('')}
-        </div>
-        <div id="feedback"></div>
-      </div>`;
     document.querySelectorAll('.choice-btn').forEach(btn => btn.addEventListener('click', onQcmAnswer));
   } else if (q.type === 'qcm-multi') {
-    app.innerHTML = `
-      <div class="card card-wide">
-        <div class="quiz-topbar">
-          <p class="progress">${progress} — ${q.notion}</p>
-          <button id="quit-quiz" class="link">✕ Quitter</button>
-        </div>
-        <h2>${q.enonce}</h2>
-        ${figHtml}
-        <div id="choices" class="choices">
-          ${q.choix.map((c, i) => `
-            <label class="choice-check">
-              <input type="checkbox" value="${i}">
-              <span>${c}</span>
-            </label>`).join('')}
-        </div>
-        <button id="submit-multi">Valider</button>
-        <div id="feedback"></div>
-      </div>`;
     document.getElementById('submit-multi').addEventListener('click', onMultiAnswer);
   } else if (q.type === 'num') {
-    app.innerHTML = `
-      <div class="card card-wide">
-        <div class="quiz-topbar">
-          <p class="progress">${progress} — ${q.notion}</p>
-          <button id="quit-quiz" class="link">✕ Quitter</button>
-        </div>
-        <h2>${q.enonce}</h2>
-        ${figHtml}
-        <div class="num-answer">
-          <button type="button" id="toggle-signe" class="secondary signe-btn" aria-label="Changer le signe">±</button>
-          <input type="text" inputmode="decimal" id="num-answer" placeholder="Ta réponse">
-          ${q.unit ? `<span class="unit">${q.unit}</span>` : ''}
-        </div>
-        <button id="submit-num">Valider</button>
-        <div id="feedback"></div>
-      </div>`;
     document.getElementById('submit-num').addEventListener('click', onNumAnswer);
     // Bouton ± affiché à toutes les questions numériques, pour ne pas trahir le signe de la réponse
     document.getElementById('toggle-signe').addEventListener('click', () => {
@@ -79,32 +93,8 @@ function renderQuizQuestion() {
       champ.focus();
     });
   } else if (q.type === 'court') {
-    app.innerHTML = `
-      <div class="card card-wide">
-        <div class="quiz-topbar">
-          <p class="progress">${progress} — ${q.notion}</p>
-          <button id="quit-quiz" class="link">✕ Quitter</button>
-        </div>
-        <h2>${q.enonce}</h2>
-        ${figHtml}
-        <input type="text" id="court-answer" placeholder="Ta réponse">
-        <button id="submit-court">Valider</button>
-        <div id="feedback"></div>
-      </div>`;
     document.getElementById('submit-court').addEventListener('click', onCourtAnswer);
   } else {
-    app.innerHTML = `
-      <div class="card card-wide">
-        <div class="quiz-topbar">
-          <p class="progress">${progress} — ${q.notion}</p>
-          <button id="quit-quiz" class="link">✕ Quitter</button>
-        </div>
-        <h2>${q.enonce}</h2>
-        ${figHtml}
-        <textarea id="open-answer" rows="4" placeholder="Ta réponse..."></textarea>
-        <button id="submit-open">Valider</button>
-        <div id="feedback"></div>
-      </div>`;
     document.getElementById('submit-open').addEventListener('click', onOpenAnswer);
   }
 
@@ -118,15 +108,14 @@ function recordOnce(question, correct, reponseDonnee) {
   recordAttempt(question, correct, reponseDonnee);
 }
 
+// Indice après un premier essai raté : l'élève peut réessayer.
 function showRetryHint(pisteReflexion) {
-  document.getElementById('feedback').innerHTML =
-    `<p class="hint">Pas tout à fait... 🤔<br>${pisteReflexion}</p><p class="subtitle">Réessaie !</p>`;
+  document.getElementById('feedback').innerHTML = indiceHtml(pisteReflexion);
 }
 
+// Essais épuisés : indice, bonne réponse, puis bouton « Suivant ».
 function showAnswerReveal(correctText, pisteReflexion) {
-  const feedback = document.getElementById('feedback');
-  feedback.innerHTML =
-    `<p class="hint">Pas tout à fait... 🤔<br>${pisteReflexion}</p><p class="hint">La bonne réponse était : <strong>${correctText}</strong></p><button id="next-q">Suivant</button>`;
+  document.getElementById('feedback').innerHTML = indiceHtml(pisteReflexion, correctText ?? '');
   document.getElementById('next-q').addEventListener('click', nextQuestion);
 }
 
@@ -280,7 +269,7 @@ async function onOpenAnswer() {
   } catch (err) {
     btn.disabled = false;
     btn.textContent = 'Valider';
-    document.getElementById('feedback').innerHTML = `<p class="error">Erreur : ${err.message}</p>`;
+    document.getElementById('feedback').innerHTML = `<p class="error">Erreur : ${echapperHtml(err.message)}</p>`;
   }
 }
 
@@ -330,7 +319,7 @@ function renderQuizResult() {
         </div>
       </div>
       ${weakNotions.length
-        ? `<p><strong>À retravailler :</strong> ${weakNotions.join(', ')}</p>`
+        ? `<p><strong>À retravailler :</strong> ${echapperHtml(weakNotions.join(', '))}</p>`
         : `<p>Tout est acquis, bravo ! 🌟</p>`}
       <button id="back-home">Retour à l'accueil</button>
     </div>`;

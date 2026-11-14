@@ -96,6 +96,15 @@ function fracAnswers(num, den) {
   return [...forms];
 }
 
+// ── Questions venues de l'IA ──
+
+// Prépare une question renvoyée par l'IA : nouvel identifiant, et retrait de la figure,
+// seul champ affiché sans échappement (réservé aux figures SVG de figures-maths.js).
+function questionDepuisIA(q) {
+  const { fig, ...reste } = q || {};
+  return { id: uid(), ...reste };
+}
+
 // ── Fabriques de questions ──
 
 // Questions QCM : même format que celui déjà utilisé par les quiz générés par l'IA

@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 
-const SCRIPTS = ['storage', 'api', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent'];
+const SCRIPTS = ['storage', 'api', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent', 'quiz'];
 const bacASable = vm.createContext({
   console, setTimeout,
   state: { quizzes: [] },
@@ -370,4 +370,35 @@ test("l'avatar est rangé à part : ni dans l'état sauvegardé, ni dans les env
   } finally {
     bacASable.localStorage = { setItem() {}, getItem() { return null; } };
   }
+});
+
+// ── Écran de quiz : échappement des textes (règle dure) ──
+const PIEGE = '<img src=x onerror=alert(1)>';
+
+test("l'écran d'une question échappe énoncé, notion, choix et unité, quel que soit le type", () => {
+  const questionHtml = appli('questionHtml');
+  const base = { notion: PIEGE, enonce: PIEGE, choix: [PIEGE, 'b'], unit: PIEGE };
+  for (const type of ['qcm', 'qcm-multi', 'num', 'court', 'ouverte']) {
+    const html = questionHtml({ ...base, type }, 'Question 1/5');
+    assert.ok(!html.includes('<img'), `balise non échappée pour le type ${type}`);
+    assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'), type);
+  }
+});
+
+test("l'indice et la bonne réponse révélée sont échappés", () => {
+  const indiceHtml = appli('indiceHtml');
+  assert.ok(!indiceHtml(PIEGE).includes('<img'));
+  assert.ok(indiceHtml(PIEGE).includes('Réessaie'));
+  const revelation = indiceHtml(PIEGE, PIEGE);
+  assert.ok(!revelation.includes('<img'));
+  assert.ok(revelation.includes('id="next-q"'));
+});
+
+test("une question venue de l'IA perd toute figure et reçoit un identifiant", () => {
+  const q = appli('questionDepuisIA')({ type: 'qcm', enonce: 'E', fig: '<svg onload=alert(1)>' });
+  assert.equal(q.fig, undefined);
+  assert.equal(q.enonce, 'E');
+  assert.match(q.id, /^id-/);
+  // Les figures locales (générateurs) restent affichées
+  assert.ok(appli('questionHtml')({ type: 'court', notion: 'n', enonce: 'e', fig: '<svg></svg>' }, 'Q').includes('<svg></svg>'));
 });
