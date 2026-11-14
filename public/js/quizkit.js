@@ -98,10 +98,21 @@ function fracAnswers(num, den) {
 
 // ── Questions venues de l'IA ──
 
+// Fraction demandée par l'IA utilisable : entiers positifs raisonnables, dénominateur non nul.
+function estFractionIA(numerateur, denominateur) {
+  return Number.isInteger(numerateur) && Number.isInteger(denominateur)
+    && numerateur >= 0 && denominateur >= 1 && numerateur <= 100000 && denominateur <= 100000;
+}
+
 // Prépare une question renvoyée par l'IA : nouvel identifiant, et retrait de la figure,
 // seul champ affiché sans échappement (réservé aux figures SVG de figures-maths.js).
+// Une question « fraction » devient une question à réponse courte qui accepte toute fraction égale
+// (champ texte : le « / » se tape, contrairement au clavier chiffres d'une question numérique).
 function questionDepuisIA(q) {
   const { fig, ...reste } = q || {};
+  if (reste.type === 'fraction' && estFractionIA(reste.numerateur, reste.denominateur)) {
+    return { id: uid(), ...fractionQ(reste.notion, reste.enonce, reste.numerateur, reste.denominateur, reste.pisteReflexion) };
+  }
   return { id: uid(), ...reste };
 }
 

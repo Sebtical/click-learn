@@ -45,7 +45,7 @@ function lireFiche(valeur) {
 
 // ── Cours sur mesure : contrôle de ce que renvoie l'IA ──
 
-// Une question du mini-quiz est utilisable : QCM avec une bonne réponse existante, ou réponse numérique.
+// Une question du mini-quiz est utilisable : QCM avec une bonne réponse existante, réponse numérique ou fraction.
 function questionIAValide(q) {
   if (!q || typeof q.enonce !== 'string' || !q.enonce.trim()) return false;
   if (q.type === 'qcm') {
@@ -53,6 +53,7 @@ function questionIAValide(q) {
       && Number.isInteger(q.correctIndex) && q.correctIndex >= 0 && q.correctIndex < q.choix.length;
   }
   if (q.type === 'num') return typeof q.answer === 'number' && Number.isFinite(q.answer);
+  if (q.type === 'fraction') return estFractionIA(q.numerateur, q.denominateur);
   return false;
 }
 

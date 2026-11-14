@@ -47,8 +47,10 @@ Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdow
 {"questions": [
   {"type": "qcm", "notion": "...", "enonce": "...", "choix": ["...", "...", "...", "..."], "correctIndex": 0, "pisteReflexion": "..."},
   {"type": "num", "notion": "...", "enonce": "...", "answer": 0, "unit": "", "pisteReflexion": "..."},
+  {"type": "fraction", "notion": "...", "enonce": "...", "numerateur": 3, "denominateur": 4, "pisteReflexion": "..."},
   {"type": "ouverte", "notion": "...", "enonce": "..."}
 ]}
+${REGLE_FRACTIONS}
 (le tableau "questions" doit contenir exactement ${QUIZ_LENGTH} éléments, ni plus ni moins)`;
 }
 
@@ -58,6 +60,10 @@ Tu reçois une ou plusieurs photos d'un même cours ou d'une même leçon (éven
 {"matiere": "une matière parmi cette liste : ${subjects.join(', ')}", "titre": "titre court du cours", "resume": "résumé synthétique du contenu en 3 à 5 phrases", "notions": ["notion précise 1", "notion précise 2"], "fiche": "fiche de cours détaillée"}
 La "fiche" reprend fidèlement le contenu des photos, sans rien inventer : définitions, règles, méthodes, dates ou formules, et exemples tels qu'ils figurent dans le cours. ${FORMAT_FICHE}`;
 }
+
+// Le clavier chiffres du téléphone n'a pas de « / » et une réponse numérique refuse « 3/4 » :
+// toute réponse attendue sous forme de fraction doit utiliser le type « fraction ».
+const REGLE_FRACTIONS = 'Si la réponse attendue est une fraction, utilise toujours le type "fraction" (numérateur et dénominateur entiers positifs, la fraction peut ne pas être simplifiée : toute fraction égale sera acceptée) et jamais "num" ; "num" est réservé aux nombres entiers ou décimaux.';
 
 // Mise en forme commune des fiches (rendue par texteRicheHtml dans cours.js) : pas de HTML ni de markdown complexe.
 const FORMAT_FICHE = 'Mise en forme : texte simple, une ligne « ## Titre » pour chaque partie, des lignes commençant par « - » pour les listes, **mot** pour mettre en gras un mot important ; aucune autre balise.';
@@ -97,13 +103,15 @@ Crée un petit cours sur mesure pour l'aider à comprendre ses erreurs :
 La « bonne réponse » indiquée ci-dessus est sûre : appuie-toi dessus et ne la contredis jamais.
 ${calibrationNote(niveau)}
 ${ACCURACY_NOTE}
-Les questions sont uniquement des QCM (4 choix) ou des questions à réponse numérique ; la piste de réflexion ne révèle jamais la réponse.
+Les questions sont uniquement des QCM (4 choix), des questions à réponse numérique ou des questions dont la réponse est une fraction ; la piste de réflexion ne révèle jamais la réponse.
+${REGLE_FRACTIONS}
 Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown, au format :
 {"titre": "titre court du cours", "resume": "ce que ce cours fait retravailler, en 1 à 2 phrases", "notions": ["..."],
  "explications": [{"notion": "...", "erreur": "...", "methode": "...", "exemple": "..."}],
  "questions": [
   {"type": "qcm", "notion": "...", "enonce": "...", "choix": ["...", "...", "...", "..."], "correctIndex": 0, "pisteReflexion": "..."},
-  {"type": "num", "notion": "...", "enonce": "...", "answer": 0, "unit": "", "pisteReflexion": "..."}
+  {"type": "num", "notion": "...", "enonce": "...", "answer": 0, "unit": "", "pisteReflexion": "..."},
+  {"type": "fraction", "notion": "...", "enonce": "...", "numerateur": 3, "denominateur": 4, "pisteReflexion": "..."}
  ]}`;
 }
 

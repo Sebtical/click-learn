@@ -521,3 +521,27 @@ test("l'icône de l'écran d'accueil iPhone est déclarée et existe", () => {
   const icone = readFileSync(new URL('../public/apple-touch-icon.png', import.meta.url));
   assert.deepEqual([...icone.subarray(1, 4)], [0x50, 0x4e, 0x47]); // signature d'un fichier PNG
 });
+
+// ── Questions « fraction » venues de l'IA (le clavier chiffres n'a pas de « / ») ──
+test("une question « fraction » de l'IA accepte toute fraction égale, tapée au clavier texte", () => {
+  const q = appli('questionDepuisIA')({ type: 'fraction', notion: 'n', enonce: 'Calcule 1/4 + 2/4', numerateur: 6, denominateur: 8, pisteReflexion: 'p' });
+  assert.equal(q.type, 'court', 'champ texte : le « / » est disponible');
+  assert.deepEqual([...q.fraction], [6, 8]);
+  assert.ok(comparerFraction('3/4', ...q.fraction).juste);
+  assert.ok(comparerFraction('6/8', ...q.fraction).juste);
+  assert.ok(!comparerFraction('2/3', ...q.fraction).juste);
+  assert.ok(appli('questionHtml')(q, 'Q').includes('id="court-answer"'));
+});
+
+test('une fraction incohérente renvoyée par l\'IA est écartée du mini-quiz', () => {
+  const valide = appli('questionIAValide');
+  assert.ok(valide({ type: 'fraction', enonce: 'e', numerateur: 3, denominateur: 4 }));
+  for (const [n, d] of [[3, 0], [1.5, 2], [-1, 4], ['3', 4]]) {
+    assert.ok(!valide({ type: 'fraction', enonce: 'e', numerateur: n, denominateur: d }), `${n}/${d}`);
+  }
+});
+
+test("les consignes de l'IA imposent le type fraction pour une réponse en fraction", () => {
+  assert.ok(appli('coursSurMesurePrompt')('5ème', 'Maths', []).includes('"type": "fraction"'));
+  assert.ok(appli('questionSetInstructions')().includes('jamais "num"'));
+});
