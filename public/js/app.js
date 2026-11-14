@@ -630,28 +630,7 @@ async function onAnalyzeLesson() {
 }
 
 function renderLessonPreview(extracted, imageDataUrls) {
-  app.innerHTML = `
-    <div class="card card-wide">
-      <h1>Vérifie les infos</h1>
-      <div class="thumb-row">${imageDataUrls.map(u => `<img class="thumb" src="${u}">`).join('')}</div>
-      <label>
-        Matière
-        <select id="matiere">
-          ${state.subjects.map(s => `<option ${s === extracted.matiere ? 'selected' : ''}>${s}</option>`).join('')}
-        </select>
-      </label>
-      <label>
-        Titre
-        <input id="titre" value="${extracted.titre}">
-      </label>
-      <p><strong>Résumé :</strong> ${extracted.resume}</p>
-      <p><strong>Notions :</strong> ${extracted.notions.join(', ')}</p>
-      <div class="actions">
-        <button id="save-lesson-btn">Enregistrer</button>
-        <button id="cancel-btn" class="secondary">Annuler</button>
-      </div>
-    </div>
-  `;
+  app.innerHTML = apercuCoursHtml(extracted, imageDataUrls, state.subjects);
 
   document.getElementById('save-lesson-btn').addEventListener('click', () => {
     const lesson = {
@@ -695,20 +674,7 @@ function renderLessonsList() {
 }
 
 function renderLessonDetail(lesson) {
-  app.innerHTML = `
-    <div class="card card-wide">
-      <h1>${lesson.titre}</h1>
-      <p class="tag">${lesson.matiere}</p>
-      <p>${lesson.resume}</p>
-      <p><strong>Notions :</strong> ${lesson.notions.join(', ')}</p>
-      <h2>Générer un parcours de révision</h2>
-      <div class="actions" id="difficulty-choice">
-        ${DIFFICULTIES.map(d => `<button class="difficulty-btn" data-id="${d.id}" data-label="${d.label}">${d.label}</button>`).join('')}
-      </div>
-      <p id="quiz-error" class="error"></p>
-      <button id="back-home" class="secondary">Retour à l'accueil</button>
-    </div>
-  `;
+  app.innerHTML = ficheCoursHtml(lesson, DIFFICULTIES);
 
   document.querySelectorAll('.difficulty-btn').forEach(btn => {
     btn.addEventListener('click', () => onGenerateQuiz(lesson, btn.dataset.id, btn.dataset.label, btn));
@@ -839,27 +805,7 @@ function renderExerciseResult(result, imageDataUrls) {
 
   const allCorrect = result.exercices.every(ex => ex.statut === 'correct');
 
-  const items = result.exercices.map(ex => `
-    <li class="exercise-item">
-      <p class="ex-statement">${ex.statut === 'correct' ? '✅' : ex.statut === 'partiel' ? '🟡' : '🔴'} ${ex.enonce}</p>
-      <p class="subtitle">Ta réponse : ${ex.reponseEleve}</p>
-      ${ex.statut !== 'correct' ? `<p class="hint">${ex.feedback}</p>` : `<p class="ok">${ex.feedback}</p>`}
-    </li>`).join('');
-
-  app.innerHTML = `
-    <div class="card card-wide">
-      <div class="hello">
-        ${mascotSVG(64)}
-        <div>
-          <h1>Correction</h1>
-          <p class="tag">${result.matiere}</p>
-        </div>
-      </div>
-      <div class="thumb-row">${imageDataUrls.map(u => `<img class="thumb" src="${u}">`).join('')}</div>
-      <ul class="exercise-list">${items}</ul>
-      <button id="back-home">Retour à l'accueil</button>
-    </div>
-  `;
+  app.innerHTML = correctionHtml(result, imageDataUrls);
 
   document.getElementById('back-home').addEventListener('click', renderHome);
   if (allCorrect) fireConfetti();

@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 
-const SCRIPTS = ['storage', 'api', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent', 'quiz'];
+const SCRIPTS = ['storage', 'api', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent', 'quiz', 'cours'];
 const bacASable = vm.createContext({
   console, setTimeout,
   state: { quizzes: [] },
@@ -404,4 +404,37 @@ test("une question venue de l'IA perd toute figure et reçoit un identifiant", (
   assert.match(q.id, /^id-/);
   // Les figures locales (générateurs) restent affichées
   assert.ok(appli('questionHtml')({ type: 'court', notion: 'n', enonce: 'e', fig: '<svg></svg>' }, 'Q').includes('<svg></svg>'));
+});
+
+// ── Écrans des cours et des corrections photo : échappement (règle dure) ──
+test("l'aperçu d'un cours photographié échappe titre, résumé et notions venus de l'IA", () => {
+  const html = appli('apercuCoursHtml')(
+    { matiere: 'SVT', titre: '"><img src=x onerror=alert(1)>', resume: PIEGE, notions: [PIEGE, 'noyau'] },
+    ['data:image/jpeg;base64,AAAA'], ['Maths', 'SVT']
+  );
+  assert.ok(!html.includes('<img src=x'), 'aucune balise injectée');
+  assert.ok(html.includes('value="&quot;&gt;&lt;img'), "le titre ne sort pas de l'attribut value");
+  assert.ok(html.includes('<option selected>SVT</option>'));
+  assert.ok(html.includes('noyau'));
+});
+
+test("la fiche d'un cours échappe ses textes et garde les boutons de niveau", () => {
+  const html = appli('ficheCoursHtml')(
+    { titre: PIEGE, matiere: 'SVT', resume: PIEGE, notions: [PIEGE] },
+    [{ id: 'facile', label: 'Facile' }]
+  );
+  assert.ok(!html.includes('<img src=x'));
+  assert.ok(html.includes('data-id="facile"'));
+  assert.ok(html.includes('class="page-art"'), "vignette de la matière dans l'en-tête");
+});
+
+test("la correction d'un exercice photographié échappe énoncé, réponse et commentaire", () => {
+  bacASable.mascotSVG = () => '<svg></svg>'; // mascot.js n'est pas chargé ici
+  const html = appli('correctionHtml')(
+    { matiere: PIEGE, exercices: [{ statut: 'faux', enonce: PIEGE, reponseEleve: PIEGE, feedback: PIEGE }, { statut: 'correct', enonce: 'e', reponseEleve: 'r', feedback: 'Bravo' }] },
+    []
+  );
+  assert.ok(!html.includes('<img src=x'));
+  assert.ok(html.includes('🔴') && html.includes('✅'));
+  assert.ok(html.includes('<p class="ok">Bravo</p>'));
 });
