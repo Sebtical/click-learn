@@ -61,7 +61,7 @@ function renderSetup() {
         </label>
         <label>
           Code d'accès
-          <input type="password" id="accessCode" required placeholder="Code donné par un parent" value="${state.accessCode}">
+          <input type="password" id="accessCode" required placeholder="Code donné par un parent" value="${echapperHtml(state.accessCode)}">
         </label>
         <button type="submit">Commencer</button>
       </form>

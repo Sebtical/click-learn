@@ -514,3 +514,10 @@ test("seuls titre, matière, résumé, notions et date d'un cours partent vers l
   });
   assert.deepEqual(Object.keys(partage).sort(), ['date', 'id', 'matiere', 'notions', 'resume', 'titre']);
 });
+
+test("l'icône de l'écran d'accueil iPhone est déclarée et existe", () => {
+  const page = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  assert.match(page, /<link rel="apple-touch-icon" href="apple-touch-icon.png">/);
+  const icone = readFileSync(new URL('../public/apple-touch-icon.png', import.meta.url));
+  assert.deepEqual([...icone.subarray(1, 4)], [0x50, 0x4e, 0x47]); // signature d'un fichier PNG
+});
