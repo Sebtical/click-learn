@@ -55,7 +55,56 @@ Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdow
 function lessonAnalysisPrompt(niveau, subjects) {
   return `Tu es un assistant pédagogique qui analyse des photos de cours pour un(e) élève de ${niveau} (collège, France).
 Tu reçois une ou plusieurs photos d'un même cours ou d'une même leçon (éventuellement plusieurs pages) : traite-les comme un seul document. Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans balises markdown, au format exact suivant :
-{"matiere": "une matière parmi cette liste : ${subjects.join(', ')}", "titre": "titre court du cours", "resume": "résumé synthétique du contenu en 3 à 5 phrases", "notions": ["notion précise 1", "notion précise 2"]}`;
+{"matiere": "une matière parmi cette liste : ${subjects.join(', ')}", "titre": "titre court du cours", "resume": "résumé synthétique du contenu en 3 à 5 phrases", "notions": ["notion précise 1", "notion précise 2"], "fiche": "fiche de cours détaillée"}
+La "fiche" reprend fidèlement le contenu des photos, sans rien inventer : définitions, règles, méthodes, dates ou formules, et exemples tels qu'ils figurent dans le cours. ${FORMAT_FICHE}`;
+}
+
+// Mise en forme commune des fiches (rendue par texteRicheHtml dans cours.js) : pas de HTML ni de markdown complexe.
+const FORMAT_FICHE = 'Mise en forme : texte simple, une ligne « ## Titre » pour chaque partie, des lignes commençant par « - » pour les listes, **mot** pour mettre en gras un mot important ; aucune autre balise.';
+
+// Fiche « Plus de détails » d'un cours déjà enregistré : la photo n'est plus disponible,
+// l'IA approfondit à partir du résumé et des notions, dans le programme du niveau.
+function ficheDetailleePrompt(niveau, cours) {
+  return `Tu es un professeur bienveillant de ${cours.matiere} pour un(e) élève de ${niveau} (collège, France).
+Voici le résumé d'un cours que l'élève a eu en classe :
+Titre : ${cours.titre}
+Résumé : ${cours.resume}
+Notions : ${(cours.notions || []).join(', ')}
+
+Rédige une fiche de révision détaillée de ce cours : explique chaque notion simplement, donne les définitions et règles à retenir, et au moins un exemple concret par notion. Reste strictement dans le programme de ${niveau} et dans le sujet du résumé, sans ajouter de chapitre voisin.
+${calibrationNote(niveau)}
+${FORMAT_FICHE}
+Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown : {"fiche": "..."}`;
+}
+
+// Nombre de questions du mini-quiz qui suit un cours sur mesure.
+const NB_QUESTIONS_SUR_MESURE = 5;
+
+// Cours sur mesure après un quiz : explique chaque erreur de l'élève, puis vérifie avec un mini-quiz.
+// La bonne réponse fournie vient de l'appli (vérifiée pour Maths et Français) : l'IA s'appuie dessus.
+function coursSurMesurePrompt(niveau, matiere, erreurs) {
+  const liste = erreurs.map((e, i) => `${i + 1}. Notion : ${e.notion || 'non précisée'}
+   Question : ${e.enonce}
+   Réponse de l'élève : ${e.reponseDonnee ?? '(non conservée)'}
+   Bonne réponse : ${e.bonneReponse ?? '(question ouverte, pas de réponse unique)'}`).join('\n');
+  return `Tu es un professeur bienveillant de ${matiere} pour un(e) élève de ${niveau} (collège, France).
+L'élève vient de faire un quiz et s'est trompé(e) sur ces questions :
+${liste}
+
+Crée un petit cours sur mesure pour l'aider à comprendre ses erreurs :
+- pour chaque notion où il y a eu une erreur (regroupe les erreurs d'une même notion) : ce qui n'allait pas dans sa réponse, dit avec bienveillance et sans le/la juger ; la méthode ou la règle à appliquer ; un exemple corrigé pas à pas, différent de la question du quiz ;
+- puis exactement ${NB_QUESTIONS_SUR_MESURE} nouvelles questions sur ces mêmes notions pour vérifier qu'il/elle a compris, de difficulté égale ou un peu plus simple que le quiz.
+La « bonne réponse » indiquée ci-dessus est sûre : appuie-toi dessus et ne la contredis jamais.
+${calibrationNote(niveau)}
+${ACCURACY_NOTE}
+Les questions sont uniquement des QCM (4 choix) ou des questions à réponse numérique ; la piste de réflexion ne révèle jamais la réponse.
+Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown, au format :
+{"titre": "titre court du cours", "resume": "ce que ce cours fait retravailler, en 1 à 2 phrases", "notions": ["..."],
+ "explications": [{"notion": "...", "erreur": "...", "methode": "...", "exemple": "..."}],
+ "questions": [
+  {"type": "qcm", "notion": "...", "enonce": "...", "choix": ["...", "...", "...", "..."], "correctIndex": 0, "pisteReflexion": "..."},
+  {"type": "num", "notion": "...", "enonce": "...", "answer": 0, "unit": "", "pisteReflexion": "..."}
+ ]}`;
 }
 
 function quizGenerationPrompt(niveau, subject, difficultyId, lesson) {

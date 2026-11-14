@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 
-const SCRIPTS = ['storage', 'api', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent', 'quiz', 'cours'];
+const SCRIPTS = ['storage', 'api', 'prompts', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent', 'quiz', 'cours'];
 const bacASable = vm.createContext({
   console, setTimeout,
   state: { quizzes: [] },
@@ -437,4 +437,80 @@ test("la correction d'un exercice photographié échappe énoncé, réponse et c
   assert.ok(!html.includes('<img src=x'));
   assert.ok(html.includes('🔴') && html.includes('✅'));
   assert.ok(html.includes('<p class="ok">Bravo</p>'));
+});
+
+// ── Fiches détaillées et cours sur mesure ──
+test("la mise en forme d'une fiche échappe le texte avant d'ajouter titres, listes et gras", () => {
+  const html = appli('texteRicheHtml')('## Les volcans\n- le **magma**\n- <img src=x onerror=alert(1)>\n\nUn texte.\n### Autre');
+  assert.equal(html, '<h3>Les volcans</h3><ul><li>le <strong>magma</strong></li><li>&lt;img src=x onerror=alert(1)&gt;</li></ul><p>Un texte.</p><h3>Autre</h3>');
+  assert.equal(appli('texteRicheHtml')(undefined), '');
+});
+
+test('une fiche vide ou absente est refusée, une fiche trop longue est bornée', () => {
+  const lireFiche = appli('lireFiche');
+  assert.equal(lireFiche('   '), null);
+  assert.equal(lireFiche(42), null);
+  assert.equal(lireFiche('x'.repeat(30000)).length, 20000);
+});
+
+test("la fiche détaillée d'un cours signale quand elle vient du résumé et non de la photo", () => {
+  const ficheDetailleeHtml = appli('ficheDetailleeHtml');
+  assert.match(ficheDetailleeHtml({ fiche: 'a', ficheSource: 'resume' }), /pas de ta photo/);
+  assert.doesNotMatch(ficheDetailleeHtml({ fiche: 'a', ficheSource: 'photo' }), /pas de ta photo/);
+});
+
+test('un cours sur mesure inutilisable est refusé, ses questions invalides écartées', () => {
+  const valider = appli('validerCoursSurMesure');
+  assert.equal(valider(null), null);
+  assert.equal(valider({ titre: 'T', explications: [{ notion: 'n' }] }), null, 'sans méthode, rien à apprendre');
+  const cours = valider({
+    titre: ' Fractions ', notions: ['a', 3],
+    explications: [{ notion: 'Simplifier', erreur: 'e', methode: 'm', exemple: 'x' }, 'bruit'],
+    questions: [
+      { type: 'qcm', enonce: 'Q1', choix: ['a', 'b'], correctIndex: 1, fig: '<svg onload=alert(1)>' },
+      { type: 'qcm', enonce: 'Q2', choix: ['a', 'b'], correctIndex: 2 },   // bonne réponse inexistante
+      { type: 'num', enonce: 'Q3', answer: '12' },                          // réponse non numérique
+      { type: 'num', enonce: 'Q4', answer: 1.5 },
+      { type: 'ouverte', enonce: 'Q5' }                                     // type non prévu ici
+    ]
+  });
+  assert.equal(cours.titre, 'Fractions');
+  assert.deepEqual([...cours.notions], ['a']);
+  assert.equal(cours.explications.length, 1);
+  assert.deepEqual(cours.questions.map(q => q.enonce), ['Q1', 'Q4']);
+  assert.equal(cours.questions[0].fig, undefined);
+});
+
+test("les erreurs d'un quiz partent vers l'IA avec la bonne réponse vérifiée, sans les réponses justes", () => {
+  const erreurs = appli('erreursDuQuiz')([
+    { correct: true, notion: 'ok', enonce: 'juste' },
+    { correct: false, notion: 'Fractions', enonce: 'Simplifie 6/8', reponseDonnee: '2/3', bonneReponse: '3/4', id: 'x' }
+  ]);
+  assert.deepEqual(erreurs.map(e => ({ ...e })), [{ notion: 'Fractions', enonce: 'Simplifie 6/8', reponseDonnee: '2/3', bonneReponse: '3/4' }]);
+  const prompt = appli('coursSurMesurePrompt')('5ème', 'Maths', erreurs);
+  assert.ok(prompt.includes('Bonne réponse : 3/4'));
+  assert.ok(prompt.includes("Réponse de l'élève : 2/3"));
+});
+
+test("la fiche d'un cours sur mesure montre ses explications échappées et le mini-quiz", () => {
+  const ficheCoursHtml = appli('ficheCoursHtml');
+  const surMesure = ficheCoursHtml({
+    type: 'sur-mesure', titre: 'T', matiere: 'Maths', resume: '', notions: [],
+    explications: [{ notion: PIEGE, erreur: PIEGE, methode: '- étape **1**', exemple: PIEGE }],
+    questions: [{ type: 'num', enonce: 'Q', answer: 1 }]
+  }, []);
+  assert.ok(!surMesure.includes('<img src=x'));
+  assert.ok(surMesure.includes('id="mini-quiz-btn"'));
+  assert.ok(surMesure.includes('<li>étape <strong>1</strong></li>'));
+  assert.ok(!surMesure.includes('fiche-btn'));
+  const normal = ficheCoursHtml({ titre: 'T', matiere: 'SVT', resume: '', notions: [] }, []);
+  assert.ok(normal.includes('id="fiche-btn"') && !normal.includes('mini-quiz-btn'));
+});
+
+test("seuls titre, matière, résumé, notions et date d'un cours partent vers l'espace parent", () => {
+  const partage = appli('coursPourPartage')({
+    id: 'c1', matiere: 'SVT', titre: 'T', resume: 'r', notions: ['n'], date: 'd',
+    fiche: 'longue fiche', explications: [{}], questions: [{}], synchro: true, type: 'sur-mesure'
+  });
+  assert.deepEqual(Object.keys(partage).sort(), ['date', 'id', 'matiere', 'notions', 'resume', 'titre']);
 });

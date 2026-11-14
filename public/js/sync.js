@@ -68,6 +68,12 @@ function enregistrerEtPartager() {
   synchroniser();
 }
 
+// Champs d'un cours partagés avec l'espace parent (jamais la fiche détaillée, les explications ni les photos).
+function coursPourPartage(cours) {
+  const { id, matiere, titre, resume, notions, date } = cours;
+  return { id, matiere, titre, resume, notions, date };
+}
+
 // Envoie une liste (réponses ou cours) par lots ; chaque lot accepté est marqué comme partagé.
 // Lève une erreur au premier lot refusé : le reste attendra le prochain envoi.
 async function envoyerParLots(liste, champ) {
@@ -75,7 +81,7 @@ async function envoyerParLots(liste, champ) {
     const lot = liste.slice(i, i + TAILLE_LOT_SYNCHRO);
     await envoyerResultats(state.accessCode, {
       profil: { prenom: state.profile.prenom, niveau: state.profile.niveau },
-      [champ]: champ === 'tentatives' ? lot.map(enrichirTentative) : lot
+      [champ]: champ === 'tentatives' ? lot.map(enrichirTentative) : lot.map(coursPourPartage)
     });
     lot.forEach(objet => { objet.synchro = true; });
     saveState(state);

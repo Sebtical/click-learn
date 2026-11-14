@@ -321,9 +321,14 @@ function renderQuizResult() {
       ${weakNotions.length
         ? `<p><strong>À retravailler :</strong> ${echapperHtml(weakNotions.join(', '))}</p>`
         : `<p>Tout est acquis, bravo ! 🌟</p>`}
-      <button id="back-home">Retour à l'accueil</button>
+      ${weakNotions.length ? `<button id="sur-mesure-btn">✨ Mon cours sur mesure</button><p id="sur-mesure-error" class="error"></p>` : ''}
+      <button id="back-home" class="${weakNotions.length ? 'secondary' : ''}">Retour à l'accueil</button>
     </div>`;
 
   document.getElementById('back-home').addEventListener('click', renderHome);
+  // Cours sur mesure : construit à partir des erreurs de ce quiz (app.js)
+  const quizTermine = currentQuiz;
+  const erreurs = erreursDuQuiz(sessionResults);
+  document.getElementById('sur-mesure-btn')?.addEventListener('click', e => onCoursSurMesure(quizTermine, erreurs, e.currentTarget));
   if (goodScore) fireConfetti();
 }

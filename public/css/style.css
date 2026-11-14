@@ -1075,3 +1075,39 @@ button.avatar {
   color: var(--ink-2);
   font-weight: 700;
 }
+
+/* ── Fiche détaillée et cours sur mesure ── */
+.fiche-detail,
+.explication {
+  margin: 14px 0;
+  padding: 16px 18px;
+  border-radius: 22px;
+  background: var(--soft);
+  line-height: 1.6;
+}
+
+.fiche-detail h3,
+.explication h3 {
+  margin: 16px 0 6px;
+  font-family: var(--display);
+  font-size: 1.05rem;
+}
+
+.fiche-detail h3:first-child,
+.explication h3:first-child { margin-top: 0; }
+
+.fiche-detail p,
+.explication p { margin: 0 0 8px; }
+
+.fiche-detail ul,
+.explication ul {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+#fiche-btn,
+#mini-quiz-btn,
+#sur-mesure-btn {
+  width: 100%;
+  margin-top: 12px;
+}

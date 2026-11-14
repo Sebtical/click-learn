@@ -614,7 +614,8 @@ async function onAnalyzeLesson() {
       ...images.map(img => imageContentBlock(img.base64, img.mediaType))
     ];
     const extracted = await callClaudeJSON(state.accessCode, content, {
-      system: lessonAnalysisPrompt(state.profile.niveau, state.subjects)
+      system: lessonAnalysisPrompt(state.profile.niveau, state.subjects),
+      maxTokens: 6000 // résumé + fiche détaillée fidèle à la photo
     });
     // On ne révoque les URLs d'aperçu qu'une fois l'appel réussi : en cas d'erreur, l'écran
     // de capture reste affiché et doit garder des miniatures valides pour la nouvelle tentative.
@@ -639,6 +640,8 @@ function renderLessonPreview(extracted, imageDataUrls) {
       titre: document.getElementById('titre').value,
       resume: extracted.resume,
       notions: extracted.notions,
+      fiche: lireFiche(extracted.fiche),
+      ficheSource: lireFiche(extracted.fiche) ? 'photo' : null,
       date: new Date().toISOString()
     };
     state.lessons.push(lesson);
@@ -676,10 +679,88 @@ function renderLessonsList() {
 function renderLessonDetail(lesson) {
   app.innerHTML = ficheCoursHtml(lesson, DIFFICULTIES);
 
+  document.getElementById('fiche-btn')?.addEventListener('click', e => onPlusDeDetails(lesson, e.currentTarget));
+  document.getElementById('mini-quiz-btn')?.addEventListener('click', () => lancerMiniQuiz(lesson));
   document.querySelectorAll('.difficulty-btn').forEach(btn => {
     btn.addEventListener('click', () => onGenerateQuiz(lesson, btn.dataset.id, btn.dataset.label, btn));
   });
   document.getElementById('back-home').addEventListener('click', renderHome);
+}
+
+// « Plus de détails » : affiche la fiche détaillée, en la demandant d'abord à l'IA si le cours n'en a pas.
+// La fiche est gardée sur l'appareil : un seul appel payant par cours.
+async function onPlusDeDetails(lesson, btn) {
+  const zone = document.getElementById('fiche-detail');
+  if (!lesson.fiche) {
+    btn.disabled = true;
+    btn.textContent = 'Rédaction de la fiche...';
+    try {
+      const reponse = await callClaudeJSON(state.accessCode, ficheDetailleePrompt(state.profile.niveau, lesson), {
+        system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 5000
+      });
+      const fiche = lireFiche(reponse?.fiche);
+      if (!fiche) throw new Error('fiche vide, réessaie');
+      lesson.fiche = fiche;
+      lesson.ficheSource = 'resume';
+      saveState(state);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '📖 Plus de détails';
+      zone.innerHTML = `<p class="error">Impossible de rédiger la fiche : ${echapperHtml(err.message)}</p>`;
+      return;
+    }
+  }
+  btn.remove();
+  zone.innerHTML = ficheDetailleeHtml(lesson);
+}
+
+// Cours sur mesure : l'IA explique les erreurs du quiz qui vient de se terminer, puis le cours est
+// enregistré dans « Mes cours » (partagé avec l'espace parent comme les autres) et affiché.
+async function onCoursSurMesure(quizTermine, erreurs, btn) {
+  const errorEl = document.getElementById('sur-mesure-error');
+  errorEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Préparation de ton cours...';
+  try {
+    const reponse = await callClaudeJSON(
+      state.accessCode,
+      coursSurMesurePrompt(state.profile.niveau, quizTermine.subject, erreurs),
+      { system: 'Tu réponds uniquement en JSON valide, sans texte ni markdown autour.', maxTokens: 6000 }
+    );
+    const cours = validerCoursSurMesure(reponse);
+    if (!cours) throw new Error("réponse de l'IA inutilisable, réessaie");
+    const lesson = {
+      id: uid(),
+      type: 'sur-mesure',
+      matiere: quizTermine.subject,
+      themeOrigine: quizTermine.theme || null, // le mini-quiz compte pour le même chapitre
+      ...cours,
+      date: new Date().toISOString()
+    };
+    state.lessons.push(lesson);
+    enregistrerEtPartager();
+    renderLessonDetail(lesson);
+  } catch (err) {
+    errorEl.textContent = `Erreur : ${err.message}`;
+    btn.disabled = false;
+    btn.textContent = '✨ Mon cours sur mesure';
+  }
+}
+
+// Mini-quiz d'un cours sur mesure : ses questions, rattachées au chapitre du quiz d'origine.
+function lancerMiniQuiz(lesson) {
+  const quiz = {
+    id: uid(),
+    lessonId: lesson.id,
+    theme: lesson.themeOrigine || null,
+    subject: lesson.matiere,
+    difficulty: 'sur-mesure',
+    createdAt: new Date().toISOString(),
+    questions: lesson.questions.map(questionDepuisIA)
+  };
+  state.quizzes.push(quiz);
+  saveState(state);
+  startQuiz(quiz);
 }
 
 async function onGenerateQuiz(lesson, difficultyId, difficultyLabel, btn) {
