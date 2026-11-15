@@ -14,10 +14,25 @@ function nomJoueurAffiche(role, surnoms, moi) {
   return (surnoms && surnoms[role]) || { enfant: 'Ton enfant', parent1: 'Parent 1', parent2: 'Parent 2' }[role] || role;
 }
 
-// Garde les questions jouables en défi : types connus, sans figure (retirée par le serveur), 10 au plus.
+// Une question a-t-elle ce que l'écran de quiz lit pour son type ? (même contrôle que questionJouable dans worker.js)
+function questionDefiJouable(q) {
+  if (!q || !TYPES_QUESTION_DEFI.includes(q.type) || typeof q.enonce !== 'string' || q.fig) return false;
+  const indiceValide = i => Number.isInteger(i) && i >= 0 && i < q.choix.length;
+  const choixValides = Array.isArray(q.choix) && q.choix.length >= 2 && q.choix.every(c => typeof c === 'string' || typeof c === 'number');
+  if (q.type === 'qcm') return choixValides && indiceValide(q.correctIndex);
+  if (q.type === 'qcm-multi') return choixValides && Array.isArray(q.correctIndexes) && q.correctIndexes.length > 0 && q.correctIndexes.every(indiceValide);
+  if (q.type === 'num') return typeof q.answer === 'number' && Number.isFinite(q.answer);
+  return Array.isArray(q.reponses) && q.reponses.length > 0 && q.reponses.every(r => typeof r === 'string'); // court
+}
+
+// Garde les questions jouables en défi : types connus et complètes, sans figure (retirée par le serveur), 10 au plus.
 function questionsPourDefi(questions) {
-  return (questions || []).filter(q => q && TYPES_QUESTION_DEFI.includes(q.type) && !q.fig).slice(0, NB_QUESTIONS_DEFI)
-    .map(({ id, ...q }) => q);
+  return (questions || []).filter(questionDefiJouable).slice(0, NB_QUESTIONS_DEFI).map(({ id, ...q }) => q);
+}
+
+// Cours de l'enfant proposables en défi : jamais ceux qu'elle a gardés pour elle (synchro « local »).
+function coursPourDefi(lecons) {
+  return (lecons || []).filter(l => l && l.synchro !== 'local');
 }
 
 // Défis que ce joueur n'a pas encore joués (bandeau et pastille).
@@ -50,7 +65,7 @@ function listeDefisHtml(donnees) {
           <span class="tag">${d.a_joue ? 'Résultats' : 'À jouer'}</span>
         </button></li>`;
   };
-  const attente = (donnees.defis || []).filter(d => !d.a_joue), joues = (donnees.defis || []).filter(d => d.a_joue);
+  const attente = defisEnAttente(donnees.defis), joues = (donnees.defis || []).filter(d => d.a_joue);
   return `${attente.length ? `<h2>À jouer</h2><ul class="defi-liste">${attente.map(ligne).join('')}</ul>` : ''}
       ${joues.length ? `<h2>Terminés</h2><ul class="defi-liste">${joues.map(ligne).join('')}</ul>` : ''}
       ${!attente.length && !joues.length ? '<p class="subtitle">Aucun défi pour l\'instant. Lance le premier !</p>' : ''}`;
@@ -88,39 +103,44 @@ function resultatsDefiHtml(donnees) {
 
 // ── Écrans ──
 
-// Liste des défis de la famille, avec le bouton pour en lancer un.
-async function renderDefis() {
-  app.innerHTML = `<div class="card card-wide"><h1>🏆 Défis</h1><div class="busy"><p>Chargement des défis...</p></div></div>`;
+// Écran « Défis » (enfant) : présentation, liste et bouton pour en lancer un.
+function renderDefis() {
+  app.innerHTML = `<div class="card card-wide">
+      <h1>🏆 Défis</h1>
+      <p class="subtitle">Un même quiz pour toute la famille : chacun joue quand il veut, puis on compare.</p>
+      <div id="defis-zone"></div>
+      <button id="defis-accueil" class="secondary">Accueil</button>
+    </div>`;
+  document.getElementById('defis-accueil').addEventListener('click', renderHome);
+  return remplirListeDefis(document.getElementById('defis-zone'));
+}
+
+// Remplit une zone avec la liste des défis et le bouton « Lancer un défi » (écran Défis et onglet parent),
+// et met à jour la pastille.
+async function remplirListeDefis(zone) {
+  zone.innerHTML = '<div class="busy"><p>Chargement des défis...</p></div>';
   let donnees;
   try {
     donnees = await chargerDefis(state.accessCode);
   } catch (err) {
-    app.innerHTML = `<div class="card card-wide"><h1>🏆 Défis</h1><p class="error">Impossible de charger les défis : ${echapperHtml(err.message)}</p>
-      <button id="defis-accueil" class="secondary">Accueil</button></div>`;
-    document.getElementById('defis-accueil').addEventListener('click', renderHome);
+    zone.innerHTML = `<p class="error">Impossible de charger les défis : ${echapperHtml(err.message)}</p>`;
     return;
   }
   mettreAJourPastille(defisEnAttente(donnees.defis).length);
-  app.innerHTML = `<div class="card card-wide">
-      <h1>🏆 Défis</h1>
-      <p class="subtitle">Un même quiz pour toute la famille : chacun joue quand il veut, puis on compare.</p>
-      <button id="defi-nouveau">➕ Lancer un défi</button>
-      ${listeDefisHtml(donnees)}
-      <button id="defis-accueil" class="secondary">Accueil</button>
-    </div>`;
+  zone.innerHTML = `<button id="defi-nouveau">➕ Lancer un défi</button>${listeDefisHtml(donnees)}`;
   document.getElementById('defi-nouveau').addEventListener('click', renderNouveauDefi);
-  document.getElementById('defis-accueil').addEventListener('click', renderHome);
-  document.querySelectorAll('[data-defi]').forEach(b => b.addEventListener('click', () => ouvrirDefi(b.dataset.defi)));
+  zone.querySelectorAll('[data-defi]').forEach(b => b.addEventListener('click', () => ouvrirDefi(b.dataset.defi)));
 }
 
 // Choix de la source d'un nouveau défi : un chapitre de Maths/Français ou un cours de l'enfant.
 async function renderNouveauDefi() {
   app.innerHTML = `<div class="card card-wide"><h1>➕ Nouveau défi</h1><div class="busy"><p>Chargement...</p></div></div>`;
-  // Cours de l'enfant : sur son téléphone pour l'enfant, depuis le serveur pour un parent
-  let cours = state.role === 'enfant' ? state.lessons : [];
+  // Cours de l'enfant : sur son téléphone (sauf ceux gardés privés) pour l'enfant ;
+  // pour un parent, les derniers cours du suivi déjà chargé, sinon une page de la liste
+  let cours = state.role === 'enfant' ? coursPourDefi(state.lessons) : [];
   if (estParent()) {
     try {
-      cours = (await chargerSuivi(state.accessCode)).cours || [];
+      cours = suiviParent?.cours || (await chargerCoursParent(state.accessCode, 0)).cours || [];
     } catch {
       cours = [];
     }
@@ -131,7 +151,7 @@ async function renderNouveauDefi() {
       <p class="subtitle">10 questions, les mêmes pour tous.</p>
       <h2>Un chapitre</h2>
       <ul class="chapter-list">${chapitres.map((c, i) => `<li><button class="defi-source" data-chapitre="${i}">
-        <span class="chap-text"><strong>${echapperHtml(c.theme.titre)}</strong><small>${c.matiere}</small></span></button></li>`).join('')}</ul>
+        <span class="chap-text"><strong>${echapperHtml(c.theme.titre)}</strong><small>${echapperHtml(c.matiere)}</small></span></button></li>`).join('')}</ul>
       ${cours.length ? `<h2>Un de ses cours</h2><ul class="chapter-list">${cours.map((c, i) => `<li><button class="defi-source" data-cours="${i}">
         <span class="chap-text"><strong>${echapperHtml(c.titre || 'Cours')}</strong><small>${echapperHtml(c.matiere || '')} · quiz préparé par l'IA</small></span></button></li>`).join('')}</ul>` : ''}
       <p id="defi-erreur" class="error"></p>
@@ -150,9 +170,12 @@ async function renderNouveauDefi() {
 
 // Chapitres de Maths et de Français jouables en défi : ceux qui fournissent assez de questions sans figure
 // (les chapitres de géométrie qui ne posent que des questions dessinées sont écartés).
+// Calculé une fois par ouverture de l'appli : le tirage est aléatoire et coûteux, la liste reste ainsi stable.
+let chapitresDefiMemo = null;
 function chapitresPourDefi() {
-  return ['Maths', 'Français'].flatMap(m => localThemes(m).map(t => ({ matiere: m, theme: t })))
+  chapitresDefiMemo ??= ['Maths', 'Français'].flatMap(m => localThemes(m).map(t => ({ matiere: m, theme: t })))
     .filter(c => questionsChapitre(c.matiere, c.theme.id).length >= 5);
+  return chapitresDefiMemo;
 }
 
 // 10 questions d'un chapitre, sans figure (tirées en plusieurs fois si besoin).
@@ -164,10 +187,12 @@ function questionsChapitre(matiere, themeId) {
   return questions.slice(0, NB_QUESTIONS_DEFI);
 }
 
-// 10 questions préparées par l'IA à partir d'un cours de l'enfant (résumé et notions).
+// 10 questions préparées par l'IA à partir d'un cours de l'enfant (résumé et notions),
+// au niveau de l'enfant (sur le téléphone d'un parent, state.profile est celui du parent).
 async function questionsCours(cours) {
+  const niveau = (estParent() && suiviParent?.profil?.niveau) || state.profile.niveau;
   const reponse = await callClaudeJSON(state.accessCode,
-    quizGenerationPrompt(state.profile.niveau, cours.matiere, 'entrainement', cours),
+    quizGenerationPrompt(niveau, cours.matiere, 'entrainement', cours),
     { system: SYSTEME_JSON, maxTokens: 5000 });
   return questionsPourDefi(questionsDepuisIA(reponse?.questions));
 }
@@ -200,13 +225,24 @@ async function ouvrirDefi(id) {
     document.getElementById('defis-retour').addEventListener('click', renderDefis);
     return;
   }
-  if (donnees.participations.some(p => p.joueur === donnees.moi)) return afficherResultatsDefi(donnees);
+  if (donnees.participations.some(p => p.joueur === donnees.moi)) {
+    delete state.defisEnCours[id]; // déjà enregistré (peut-être depuis un autre appareil)
+    saveState(state);
+    return afficherResultatsDefi(donnees);
+  }
+  // Pas encore joué : nouveau départ, ou reprise après la dernière question répondue
   const { defi } = donnees;
-  startQuiz({
+  const quiz = {
     id: uid(), defiId: defi.id, lessonId: null, subject: defi.matiere, difficulty: 'defi-famille',
     theme: defi.questions[0]?.theme || null, createdAt: new Date().toISOString(),
-    questions: defi.questions.map(q => ({ ...q, id: uid() }))
-  });
+    questions: defi.questions.map(q => ({ ...q, id: uid() })),
+    // Après chaque réponse : progression gardée sur le téléphone, pour reprendre (et non rejouer) après un abandon
+    apresReponse: resultats => {
+      state.defisEnCours[defi.id] = resultats.map(r => ({ correct: r.correct, reponseDonnee: r.reponseDonnee }));
+    },
+    terminer: resultats => terminerDefi(quiz, resultats)
+  };
+  startQuiz(quiz, state.defisEnCours[defi.id] || []);
 }
 
 // Fin d'un quiz de défi : envoie le score (premiers essais) et les réponses, puis montre les résultats.
@@ -220,13 +256,15 @@ async function terminerDefi(quiz, resultats) {
   try {
     await envoyerParticipation(state.accessCode, quiz.defiId, participation);
   } catch (err) {
-    if (!/déjà joué/.test(err.message)) {
+    if (err.status !== 409) { // 409 = déjà joué (ex. depuis un autre appareil) : on montre simplement les résultats
       app.innerHTML = `<div class="card card-wide"><p class="error">Score non envoyé : ${echapperHtml(err.message)}</p>
         <button id="defi-renvoyer">Réessayer</button></div>`;
       document.getElementById('defi-renvoyer').addEventListener('click', () => terminerDefi(quiz, resultats));
       return;
     }
   }
+  delete state.defisEnCours[quiz.defiId]; // participation enregistrée : la progression locale ne sert plus
+  saveState(state);
   fireConfetti();
   await ouvrirDefi(quiz.defiId);
 }

@@ -715,7 +715,7 @@ test("le service worker affiche le message et pose la pastille, sans rien d'autr
 
 // ── Défis en famille ──
 const DONNEES_DEFIS = {
-  moi: 'enfant', surnoms: { enfant: 'Léa', parent1: PIEGE },
+  moi: 'enfant', surnoms: { enfant: 'Zoé-test', parent1: PIEGE },
   defis: [
     { id: 'd2', lance_par: 'parent1', titre: PIEGE, matiere: 'Maths', a_joue: false, participations: [{ joueur: 'parent1', termine_le: 't' }] },
     { id: 'd1', lance_par: 'enfant', titre: 'Volcans', matiere: 'SVT', a_joue: true, participations: [{ joueur: 'enfant', score: 8, total: 10 }, { joueur: 'parent1', score: 9, total: 10 }] }
@@ -759,6 +759,18 @@ test('un défi ne garde que 10 questions jouables, sans figure ni question ouver
   const gardees = appli('questionsPourDefi')(questions);
   assert.equal(gardees.length, 10);
   assert.ok(gardees.every(q => q.type === 'num' && q.id === undefined));
+  // Questions incomplètes (IA mal formée) écartées : le serveur les refuserait
+  const jouable = appli('questionDefiJouable');
+  assert.equal(jouable({ type: 'qcm', enonce: 'e' }), false);
+  assert.equal(jouable({ type: 'qcm', enonce: 'e', choix: ['a', 'b'], correctIndex: 2 }), false);
+  assert.equal(jouable({ type: 'qcm', enonce: 'e', choix: ['a', 'b'], correctIndex: 1 }), true);
+  assert.equal(jouable({ type: 'court', enonce: 'e', reponses: ['3/4'] }), true);
+  assert.equal(jouable({ type: 'num', enonce: 'e', answer: 'trois' }), false);
+});
+
+test("un cours gardé privé par l'enfant n'est jamais proposé en défi", () => {
+  const cours = appli('coursPourDefi')([{ id: 'a', titre: 'Partagé' }, { id: 'b', titre: 'Privé', synchro: 'local' }]);
+  assert.deepEqual([...cours.map(c => c.id)], ['a']);
 });
 
 test("seuls les chapitres capables de fournir des questions sans figure sont proposés en défi", () => {

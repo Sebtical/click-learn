@@ -361,7 +361,8 @@ function coursLeger(c) {
 async function handleParentCours(request, env, chemin) {
   const { refus } = await controlerAcces(request, env, 'GET', ['parent1', 'parent2'], 'Espace réservé aux parents.');
   if (refus) return refus;
-  const id = decodeURIComponent(chemin.split('/')[4] || '');
+  const id = decoderSegment(chemin.split('/')[4] || '');
+  if (id === null) return erreur(400, 'Adresse invalide.');
   try {
     // Contenu d'un cours : fiche, carte et explications, lus au clic
     if (id) {
@@ -374,15 +375,16 @@ async function handleParentCours(request, env, chemin) {
     const page = Math.max(0, Math.min(Number.parseInt(url.searchParams.get('page'), 10) || 0, 500));
     const matiere = (url.searchParams.get('matiere') || '').slice(0, 100);
     const filtre = matiere ? ' AND matiere = ?4' : '';
+    // Les matières (pour le filtre) ne sont lues qu'avec la première page, la seule qui les affiche
     const [liste, matieres] = await Promise.all([
       env.DB.prepare(`SELECT ${COLONNES_COURS_LEGER} FROM cours WHERE joueur = ?1${filtre} ORDER BY date DESC LIMIT ?2 OFFSET ?3`)
         .bind('enfant', COURS_PAR_PAGE + 1, page * COURS_PAR_PAGE, ...(matiere ? [matiere] : [])).all(),
-      env.DB.prepare('SELECT DISTINCT matiere FROM cours WHERE joueur = ?1 AND matiere IS NOT NULL ORDER BY matiere').bind('enfant').all()
+      page === 0 ? env.DB.prepare('SELECT DISTINCT matiere FROM cours WHERE joueur = ?1 AND matiere IS NOT NULL ORDER BY matiere').bind('enfant').all() : null
     ]);
     return reponseJson(200, {
       cours: liste.results.slice(0, COURS_PAR_PAGE).map(coursLeger),
       suivant: liste.results.length > COURS_PAR_PAGE,
-      matieres: matieres.results.map(m => m.matiere)
+      matieres: matieres ? matieres.results.map(m => m.matiere) : []
     });
   } catch {
     return erreur(500, 'Lecture des cours impossible pour le moment.');
@@ -504,9 +506,9 @@ async function envoyerPush(env, abonnement, message, jwk) {
 // Nombre de défis qu'un joueur n'a pas encore joués, y compris ceux qu'il a lancés (pastille sur l'icône).
 async function defisEnAttente(env, role) {
   const ligne = await env.DB.prepare(
-    `SELECT COUNT(*) AS nb FROM defis d
+    `SELECT COUNT(*) AS nb FROM (SELECT id FROM defis ORDER BY cree_le DESC LIMIT ?2) d
        WHERE NOT EXISTS (SELECT 1 FROM participations p WHERE p.defi_id = d.id AND p.joueur = ?1)`
-  ).bind(role).first();
+  ).bind(role, LIMITE_DEFIS).first(); // mêmes défis que la liste de l'appli, sinon la pastille compterait des défis introuvables
   return ligne?.nb ?? 0;
 }
 
@@ -520,11 +522,16 @@ async function notifierAutres(env, auteur, message) {
   } catch {
     return;
   }
+  // Pastille calculée une fois par joueur, même s'il a plusieurs appareils abonnés
+  const pastilles = new Map();
+  const pastille = role => {
+    if (!pastilles.has(role)) pastilles.set(role, defisEnAttente(env, role).catch(() => 0));
+    return pastilles.get(role);
+  };
   await Promise.all(abonnements.map(async a => {
     const contenu = message(a.role);
     if (!contenu) return;
-    const badge = await defisEnAttente(env, a.role).catch(() => 0);
-    await envoyerPush(env, a, { ...contenu, badge, url: '/' }, jwk);
+    await envoyerPush(env, a, { ...contenu, badge: await pastille(a.role) }, jwk);
   }));
 }
 
@@ -564,16 +571,27 @@ async function nomJoueur(env, role) {
 // Un joueur lance un quiz figé ; chacun le joue quand il veut ; les réponses des autres ne sont
 // visibles qu'après avoir joué soi-même. Le joueur est toujours déduit du code d'accès.
 
-const ROLES = ['enfant', 'parent1', 'parent2'];
 const TYPES_QUESTION_DEFI = ['qcm', 'qcm-multi', 'num', 'court'];
 
-// Questions d'un défi reçues : 1 à 15, types connus, sans figure (seul HTML affiché tel quel),
+// Une question est jouable si elle a ce que l'écran de quiz lit pour son type
+// (sinon le quiz planterait chez les autres joueurs).
+function questionJouable(q) {
+  if (!q || typeof q !== 'object' || !TYPES_QUESTION_DEFI.includes(q.type) || typeof q.enonce !== 'string') return false;
+  const indiceValide = i => Number.isInteger(i) && i >= 0 && i < q.choix.length;
+  const choixValides = Array.isArray(q.choix) && q.choix.length >= 2 && q.choix.every(c => typeof c === 'string' || typeof c === 'number');
+  if (q.type === 'qcm') return choixValides && indiceValide(q.correctIndex);
+  if (q.type === 'qcm-multi') return choixValides && Array.isArray(q.correctIndexes) && q.correctIndexes.length > 0 && q.correctIndexes.every(indiceValide);
+  if (q.type === 'num') return typeof q.answer === 'number' && Number.isFinite(q.answer);
+  return Array.isArray(q.reponses) && q.reponses.length > 0 && q.reponses.every(r => typeof r === 'string'); // court
+}
+
+// Questions d'un défi reçues : 1 à 15, jouables, sans figure (seul HTML affiché tel quel),
 // taille totale bornée ; null si inutilisables.
 function questionsDefiValides(liste) {
   if (!Array.isArray(liste) || liste.length === 0 || liste.length > MAX_QUESTIONS_DEFI) return null;
   const propres = [];
   for (const q of liste) {
-    if (!q || typeof q !== 'object' || !TYPES_QUESTION_DEFI.includes(q.type) || typeof q.enonce !== 'string') return null;
+    if (!questionJouable(q)) return null;
     const { fig, ...sansFigure } = q;
     propres.push(sansFigure);
   }
@@ -590,12 +608,21 @@ function reponsesValides(liste, total) {
   })));
 }
 
-// Enregistre le surnom du joueur (« Papa »), affiché aux autres dans les défis.
-function ecritureSurnom(env, role, surnom) {
-  return env.DB.prepare(
-    `INSERT INTO profils (role, prenom, maj) VALUES (?1, ?2, ?3)
-     ON CONFLICT (role) DO UPDATE SET prenom = excluded.prenom, maj = excluded.maj`
-  ).bind(role, surnom, new Date().toISOString());
+// Écrit en un lot une action de défi (lancement ou participation) et le surnom du joueur (« Papa »),
+// affiché aux autres. Renvoie les résultats du lot, ou null si la base est indisponible.
+async function ecrireAvecSurnom(env, role, ecriture, surnom) {
+  const ecritures = [ecriture];
+  if (surnom) {
+    ecritures.push(env.DB.prepare(
+      `INSERT INTO profils (role, prenom, maj) VALUES (?1, ?2, ?3)
+       ON CONFLICT (role) DO UPDATE SET prenom = excluded.prenom, maj = excluded.maj`
+    ).bind(role, surnom, new Date().toISOString()));
+  }
+  try {
+    return await env.DB.batch(ecritures);
+  } catch {
+    return null;
+  }
 }
 
 // Surnoms connus de chaque rôle (pour afficher « Papa », « Maman », le prénom de l'enfant).
@@ -615,24 +642,20 @@ function participationsVisibles(participations, role) {
 
 // POST /api/defis : lance un défi (n'importe quel joueur).
 async function creerDefi(request, env, role, ctx) {
+  // Vérification de l'envoi : identifiant et questions jouables
   const envoi = lireObjetJson(await request.text());
   if (envoi === null || typeof envoi.id !== 'string' || !envoi.id || envoi.id.length > 100) return erreur(400, 'Défi invalide.');
   const questions = questionsDefiValides(envoi.questions);
   if (questions === null) return erreur(400, 'Questions du défi invalides.');
-  const ecritures = [env.DB.prepare(
-    `INSERT OR IGNORE INTO defis (id, lance_par, matiere, titre, questions, cree_le) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
-  ).bind(envoi.id, role, texteBorne(envoi.matiere, 100), texteBorne(envoi.titre, 200), questions, new Date().toISOString())];
+  // Écriture en un lot : le défi (ignoré s'il existe déjà) et le surnom du lanceur
   const surnom = texteBorne(envoi.surnom, 40);
-  if (surnom) ecritures.push(ecritureSurnom(env, role, surnom));
-  let resultats;
-  try {
-    resultats = await env.DB.batch(ecritures);
-  } catch {
-    return erreur(500, 'Enregistrement impossible pour le moment.');
-  }
+  const resultats = await ecrireAvecSurnom(env, role, env.DB.prepare(
+    `INSERT OR IGNORE INTO defis (id, lance_par, matiere, titre, questions, cree_le) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+  ).bind(envoi.id, role, texteBorne(envoi.matiere, 100), texteBorne(envoi.titre, 200), questions, new Date().toISOString()), surnom);
+  if (!resultats) return erreur(500, 'Enregistrement impossible pour le moment.');
   // Nouveau défi (pas un renvoi du même) : les deux autres joueurs sont prévenus
   if (resultats[0]?.meta?.changes) {
-    const nom = await nomJoueur(env, role);
+    const nom = surnom || await nomJoueur(env, role);
     const titre = texteBorne(envoi.titre, 200) || 'un quiz';
     await attendre(ctx, notifierAutres(env, role, () => ({ titre: 'Nouveau défi 🏆', corps: `${nom} t'a lancé un défi : ${titre}` })));
   }
@@ -644,7 +667,9 @@ async function listerDefis(env, role) {
   let defis, participations, noms;
   try {
     [defis, participations, noms] = await Promise.all([
-      env.DB.prepare('SELECT id, lance_par, matiere, titre, cree_le, questions FROM defis ORDER BY cree_le DESC LIMIT ?1').bind(LIMITE_DEFIS).all(),
+      env.DB.prepare(
+        'SELECT id, lance_par, matiere, titre, cree_le, json_array_length(questions) AS nb_questions FROM defis ORDER BY cree_le DESC LIMIT ?1'
+      ).bind(LIMITE_DEFIS).all(),
       env.DB.prepare(
         'SELECT p.* FROM participations p JOIN (SELECT id FROM defis ORDER BY cree_le DESC LIMIT ?1) d ON d.id = p.defi_id'
       ).bind(LIMITE_DEFIS).all(),
@@ -657,7 +682,7 @@ async function listerDefis(env, role) {
     const parts = participations.results.filter(p => p.defi_id === d.id);
     return {
       id: d.id, lance_par: d.lance_par, matiere: d.matiere, titre: d.titre, cree_le: d.cree_le,
-      nb_questions: (lireJson(d.questions) ?? []).length,
+      nb_questions: d.nb_questions ?? 0,
       a_joue: parts.some(p => p.joueur === role),
       participations: participationsVisibles(parts, role).map(({ reponses, ...resume }) => resume)
     };
@@ -689,9 +714,10 @@ async function lireDefi(env, role, id) {
 async function participerDefi(request, env, role, id, ctx) {
   const envoi = lireObjetJson(await request.text());
   if (envoi === null) return erreur(400, 'Participation invalide.');
+  // Lecture du défi : son nombre de questions borne le score et les réponses
   let defi;
   try {
-    defi = await env.DB.prepare('SELECT questions FROM defis WHERE id = ?1').bind(id).first();
+    defi = await env.DB.prepare('SELECT questions, titre FROM defis WHERE id = ?1').bind(id).first();
   } catch {
     return erreur(500, 'Enregistrement impossible pour le moment.');
   }
@@ -699,24 +725,22 @@ async function participerDefi(request, env, role, id, ctx) {
   const total = (lireJson(defi.questions) ?? []).length;
   const score = Number.isInteger(envoi.score) ? Math.min(Math.max(envoi.score, 0), total) : null;
   if (score === null) return erreur(400, 'Score invalide.');
-  const ecritures = [env.DB.prepare(
-    `INSERT OR IGNORE INTO participations (defi_id, joueur, score, total, reponses, termine_le) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
-  ).bind(id, role, score, total, reponsesValides(envoi.reponses, total), new Date().toISOString())];
+  // Écriture en un lot : la participation (une seule par joueur) et le surnom
   const surnom = texteBorne(envoi.surnom, 40);
-  if (surnom) ecritures.push(ecritureSurnom(env, role, surnom));
-  let resultats;
-  try {
-    resultats = await env.DB.batch(ecritures);
-  } catch {
-    return erreur(500, 'Enregistrement impossible pour le moment.');
-  }
+  const resultats = await ecrireAvecSurnom(env, role, env.DB.prepare(
+    `INSERT OR IGNORE INTO participations (defi_id, joueur, score, total, reponses, termine_le) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+  ).bind(id, role, score, total, reponsesValides(envoi.reponses, total), new Date().toISOString()), surnom);
+  if (!resultats) return erreur(500, 'Enregistrement impossible pour le moment.');
   // INSERT OR IGNORE : aucune ligne écrite = ce joueur avait déjà joué (son premier résultat compte)
   if (resultats[0]?.meta?.changes === 0) return erreur(409, 'Tu as déjà joué ce défi.');
   // Les autres sont prévenus, sans le score (gardé pour l'appli) : « à toi » ou « qui a gagné ? »
   await attendre(ctx, (async () => {
-    const nom = await nomJoueur(env, role);
-    const titre = (await env.DB.prepare('SELECT titre FROM defis WHERE id = ?1').bind(id).first().catch(() => null))?.titre || 'le défi';
-    const joueurs = new Set((await env.DB.prepare('SELECT joueur FROM participations WHERE defi_id = ?1').bind(id).all()).results.map(p => p.joueur));
+    const titre = defi.titre || 'le défi';
+    const [nom, participants] = await Promise.all([
+      surnom || nomJoueur(env, role),
+      env.DB.prepare('SELECT joueur FROM participations WHERE defi_id = ?1').bind(id).all()
+    ]);
+    const joueurs = new Set(participants.results.map(p => p.joueur));
     await notifierAutres(env, role, r => ({
       titre: 'Défi terminé 🏁',
       corps: joueurs.has(r) ? `${nom} a terminé « ${titre} » : découvrez qui a gagné !` : `${nom} a terminé « ${titre} » : à toi de jouer !`
@@ -728,10 +752,12 @@ async function participerDefi(request, env, role, id, ctx) {
 // Aiguillage des routes /api/defis… (tous les joueurs y ont accès).
 async function handleDefis(request, env, chemin, ctx) {
   const morceaux = chemin.split('/').filter(Boolean); // ['api', 'defis', id?, 'participation'?]
-  const id = morceaux[2] ? decodeURIComponent(morceaux[2]) : null;
-  const methode = morceaux.length === 2 && request.method === 'POST' ? 'POST'
-    : morceaux.length === 4 && morceaux[3] === 'participation' ? 'POST' : 'GET';
   if (morceaux.length > 4 || (morceaux.length === 4 && morceaux[3] !== 'participation')) return erreur(404, 'Route inconnue.');
+  const id = morceaux[2] ? decoderSegment(morceaux[2]) : '';
+  if (id === null) return erreur(400, 'Adresse invalide.');
+  // Méthode attendue : POST pour lancer un défi ou envoyer sa participation, GET sinon
+  let methode = 'GET';
+  if (morceaux.length === 4 || (morceaux.length === 2 && request.method === 'POST')) methode = 'POST';
   const { role, refus } = await controlerAcces(request, env, methode);
   if (refus) return refus;
   if (!id) return methode === 'POST' ? creerDefi(request, env, role, ctx) : listerDefis(env, role);
@@ -739,10 +765,20 @@ async function handleDefis(request, env, chemin, ctx) {
   return morceaux.length === 4 ? participerDefi(request, env, role, id, ctx) : lireDefi(env, role, id);
 }
 
-// Laisse une tâche finir après la réponse (notifications) ; sans contexte (tests), on l'attend.
+// Laisse une tâche finir après la réponse (notifications) ; sans contexte (tests), on renvoie la promesse pour l'attendre.
 function attendre(ctx, promesse) {
-  if (ctx?.waitUntil) ctx.waitUntil(promesse);
-  else return promesse;
+  if (!ctx?.waitUntil) return promesse;
+  ctx.waitUntil(promesse);
+  return undefined;
+}
+
+// Décode un morceau d'adresse (%20…) ; null s'il est mal formé, au lieu de faire planter le Worker.
+function decoderSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
 }
 
 // ── Aiguillage ──

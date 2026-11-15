@@ -9,8 +9,11 @@ const ONGLETS_PARENT = [
   ['ensemble', "Vue d'ensemble"], ['cours', 'Cours'], ['erreurs', 'Erreurs'], ['progression', 'Progression'], ['defis', 'Défis']
 ];
 
-// Suivi chargé une fois par ouverture de l'accueil parent (évite de le recharger à chaque onglet).
+const SUIVI_FRAIS_MS = 2 * 60 * 1000; // au-delà, revenir à l'accueil recharge le suivi
+
+// Suivi gardé en mémoire (évite de le recharger à chaque onglet ou retour à l'accueil).
 let suiviParent = null;
+let suiviChargeLe = 0;
 
 // ── Calculs (fonctions pures, testées) ──
 
@@ -95,12 +98,18 @@ function contenuCoursHtml(contenu, vue) {
   return carte ? carteMentaleHtml(carte) : '<p class="subtitle">Carte illisible.</p>';
 }
 
+// Notions les moins réussies (au plus n), en lignes de liste prêtes à afficher.
+function pointsFaiblesHtml(tentatives, n) {
+  return regrouper(tentatives, t => t.notion || '(non précisé)')
+    .filter(x => x.justes < x.total).sort((a, b) => a.pct - b.pct).slice(0, n)
+    .map(x => `<li><span>${echapperHtml(x.cle)}</span><span>${x.justes}/${x.total}</span></li>`);
+}
+
 // Vue d'ensemble : activité de la semaine, défis en attente, derniers cours, points à retravailler.
 function ensembleHtml(suivi) {
   const { tentatives, cours = [], nbCours } = suivi;
   const semaine = activiteSemaine(tentatives);
-  const faibles = regrouper(tentatives, t => t.notion || '(non précisé)')
-    .filter(n => n.justes < n.total).sort((a, b) => a.pct - b.pct).slice(0, 3);
+  const faibles = pointsFaiblesHtml(tentatives, 3);
   return `
     <div class="kpis">
       <div class="kpi"><b>${semaine.questions}</b><span>Questions cette semaine</span></div>
@@ -116,7 +125,7 @@ function ensembleHtml(suivi) {
     </div>
     <div class="parent-section">
       <h3>🔴 Points à retravailler</h3>
-      ${faibles.length ? `<ul class="notion-list weak">${faibles.map(n => `<li><span>${echapperHtml(n.cle)}</span><span>${n.justes}/${n.total}</span></li>`).join('')}</ul>` : '<p class="subtitle">Pas encore assez de données.</p>'}
+      ${faibles.length ? `<ul class="notion-list weak">${faibles.join('')}</ul>` : '<p class="subtitle">Pas encore assez de données.</p>'}
     </div>`;
 }
 
@@ -138,8 +147,6 @@ function progressionHtml(tentatives, tronque) {
   const parMatiere = regrouper(tentatives, t => t.matiere || 'Autre').sort((a, b) => a.cle.localeCompare(b.cle));
   const parChapitre = regrouper(tentatives, t => `${t.matiere || 'Autre'}|${t.theme || ''}`)
     .sort((a, b) => a.cle.localeCompare(b.cle) || a.pct - b.pct);
-  const faibles = regrouper(tentatives, t => t.notion || '(non précisé)')
-    .filter(n => n.justes < n.total).sort((a, b) => a.pct - b.pct).slice(0, 5);
   const historique = regrouper(tentatives, t => t.quiz_id || t.id)
     .sort((a, b) => b.derniere.localeCompare(a.derniere)).slice(0, NB_QUIZ_HISTORIQUE);
   const liste = (titre, lignes, classe = 'notion-list') => lignes.length
@@ -151,7 +158,7 @@ function progressionHtml(tentatives, tronque) {
       const [matiere, theme] = c.cle.split('|');
       return `<li><span>${echapperHtml(matiere)} — ${echapperHtml(libelleChapitre(matiere, theme))}</span><span>${masteryBadge(c.pct)} <small>${c.total} q.</small></span></li>`;
     }))}
-    ${liste('🔴 Points à retravailler', faibles.map(n => `<li><span>${echapperHtml(n.cle)}</span><span>${n.justes}/${n.total}</span></li>`), 'notion-list weak')}
+    ${liste('🔴 Points à retravailler', pointsFaiblesHtml(tentatives, 5), 'notion-list weak')}
     ${liste('Historique récent', historique.map(h => `<li><span>${dateCourte(h.derniere)} — ${echapperHtml(h.matiere)}</span><span>${h.justes}/${h.total}</span></li>`), 'history-list')}
     ${!tentatives.length ? '<p class="subtitle">Aucun quiz effectué pour le moment.</p>' : ''}`;
 }
@@ -159,11 +166,13 @@ function progressionHtml(tentatives, tronque) {
 // ── Écrans ──
 
 // Accueil parent : en-tête de l'enfant, onglets, contenu de l'onglet choisi (Vue d'ensemble par défaut).
+// Le suivi (jusqu'à 5 000 réponses) n'est rechargé que s'il est demandé ou a plus de 2 minutes.
 async function renderParentDashboard(onglet = 'ensemble', recharger = true) {
-  if (recharger || !suiviParent) {
+  if (recharger || !suiviParent || Date.now() - suiviChargeLe > SUIVI_FRAIS_MS) {
     app.innerHTML = `<div class="card card-wide"><h1>👪 Suivi</h1><div class="busy"><p>Chargement du suivi...</p></div></div>`;
     try {
       suiviParent = await chargerSuivi(state.accessCode);
+      suiviChargeLe = Date.now();
     } catch (err) {
       app.innerHTML = `<div class="card card-wide"><h1>👪 Suivi</h1>
         <p class="error">Impossible de charger le suivi : ${echapperHtml(err.message)}</p>
@@ -191,6 +200,9 @@ async function renderParentDashboard(onglet = 'ensemble', recharger = true) {
   document.querySelectorAll('.onglets [data-onglet]').forEach(b => b.addEventListener('click', () => renderParentDashboard(b.dataset.onglet, false)));
   document.getElementById('edit-config').addEventListener('click', renderSetup);
   brancherNotificationsAccueil();
+  // Onglet choisi rendu visible dans la barre (sur iPhone, « Progression » et « Défis » dépassent à droite)
+  const actif = document.querySelector('.onglet.actif');
+  if (actif) actif.parentElement.scrollLeft = actif.offsetLeft - actif.parentElement.offsetLeft - 8;
   afficherOnglet(onglet);
 }
 
@@ -207,17 +219,7 @@ async function afficherOnglet(onglet) {
   } else if (onglet === 'progression') {
     zone.innerHTML = progressionHtml(tentatives, tronque);
   } else if (onglet === 'defis') {
-    zone.innerHTML = '<div class="busy"><p>Chargement des défis...</p></div>';
-    try {
-      const donnees = await chargerDefis(state.accessCode);
-      mettreAJourPastille(defisEnAttente(donnees.defis).length);
-      zone.innerHTML = `<button id="defi-nouveau">➕ Lancer un défi</button>${listeDefisHtml(donnees)}`;
-      document.getElementById('defi-nouveau').addEventListener('click', renderNouveauDefi);
-      zone.querySelectorAll('[data-defi]').forEach(b => b.addEventListener('click', () => ouvrirDefi(b.dataset.defi)));
-    } catch (err) {
-      zone.innerHTML = `<p class="error">Impossible de charger les défis : ${echapperHtml(err.message)}</p>`;
-    }
-    return;
+    return remplirListeDefis(zone); // même liste que l'écran « Défis » (defis.js)
   } else if (onglet === 'cours') {
     return afficherPageCours(zone, 0, '');
   }
@@ -225,15 +227,20 @@ async function afficherOnglet(onglet) {
 }
 
 // Onglet Cours : une page de cours (20), filtrable par matière, avec « Plus de cours » s'il en reste.
+let demandeCoursEnCours = 0; // numéro de la dernière demande : une réponse plus ancienne arrivée en retard est ignorée
 async function afficherPageCours(zone, page, matiere) {
+  const numero = ++demandeCoursEnCours;
   if (page === 0) zone.innerHTML = '<div class="busy"><p>Chargement des cours...</p></div>';
+  const boutonPlus = document.getElementById('cours-plus');
+  if (boutonPlus) boutonPlus.disabled = true; // pas de double toucher sur « Plus de cours »
   let donnees;
   try {
     donnees = await chargerCoursParent(state.accessCode, page, matiere);
   } catch (err) {
-    zone.innerHTML = `<p class="error">Impossible de charger les cours : ${echapperHtml(err.message)}</p>`;
+    if (numero === demandeCoursEnCours) zone.innerHTML = `<p class="error">Impossible de charger les cours : ${echapperHtml(err.message)}</p>`;
     return;
   }
+  if (numero !== demandeCoursEnCours || !zone.isConnected) return; // filtre changé ou onglet quitté entre-temps
   if (page === 0) {
     zone.innerHTML = `
       <label>Matière
@@ -247,6 +254,7 @@ async function afficherPageCours(zone, page, matiere) {
   liste.insertAdjacentHTML('beforeend', donnees.cours.length || page ? donnees.cours.map(ligneCoursHtml).join('') : '<p class="subtitle">Aucun cours.</p>');
   const plus = document.getElementById('cours-plus');
   plus.hidden = !donnees.suivant;
+  plus.disabled = false;
   plus.onclick = () => afficherPageCours(zone, page + 1, matiere);
   brancherContenuCours(liste);
 }
@@ -270,10 +278,4 @@ function brancherContenuCours(zone) {
       }
     });
   });
-}
-
-// Compatibilité : l'ancien écran « Espace parent » ouvre désormais l'accueil parent.
-function afficherSuivi(suivi) {
-  suiviParent = suivi;
-  renderParentDashboard('ensemble', false);
 }

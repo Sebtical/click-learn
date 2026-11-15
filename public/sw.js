@@ -19,8 +19,7 @@ self.addEventListener('push', evenement => {
   evenement.waitUntil(Promise.all([
     self.registration.showNotification(message.titre || 'Click&Learn', {
       body: message.corps || 'Du nouveau dans tes défis !',
-      icon: 'apple-touch-icon.png',
-      data: { url: '/' }
+      icon: 'apple-touch-icon.png'
     }),
     pastille
   ]));

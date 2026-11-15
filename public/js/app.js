@@ -192,7 +192,7 @@ function masteryBadge(pct) {
 
 // Accueil : salutation, carte de niveau, matières en cartes illustrées, puis les actions photo.
 function renderHome() {
-  if (estParent()) return renderParentDashboard(); // parent : tableau de bord de l'enfant (parent.js)
+  if (estParent()) return renderParentDashboard('ensemble', false); // parent : tableau de bord de l'enfant (parent.js), rechargé s'il date
   const points = state.attempts.filter(a => a.correct).length;
   const n = niveauDepuisPoints(points);
 

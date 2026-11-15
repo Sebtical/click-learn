@@ -313,8 +313,8 @@ test('les textes trop longs sont tronqués', async () => {
 test('les cours et le profil sont enregistrés, le profil mis à jour', async () => {
   const DB = faireD1();
   const cours = { id: 'c-1', matiere: 'SVT', titre: 'La cellule', resume: 'r', notions: ['noyau', 3], date: '2026-11-10' };
-  await synchroniser({ cours: [cours], profil: { prenom: 'Léa', niveau: '5ème' } }, { ...ENV, DB });
-  await synchroniser({ profil: { prenom: 'Léa', niveau: '4ème' } }, { ...ENV, DB });
+  await synchroniser({ cours: [cours], profil: { prenom: 'Zoé-test', niveau: '5ème' } }, { ...ENV, DB });
+  await synchroniser({ profil: { prenom: 'Zoé-test', niveau: '4ème' } }, { ...ENV, DB });
   assert.deepEqual(JSON.parse(DB.lire('SELECT notions FROM cours')[0].notions), ['noyau']);
   const profils = DB.lire('SELECT role, niveau FROM profils');
   assert.deepEqual(profils.map(p => ({ ...p })), [{ role: 'enfant', niveau: '4ème' }]);
@@ -341,7 +341,7 @@ function lireSuivi(env, code = 'code-parent-un', methode = 'GET') {
 test('chaque parent lit le profil, les réponses et les cours de l\'enfant', async () => {
   const env = { ...ENV, DB: faireD1() };
   await synchroniser({
-    profil: { prenom: 'Léa', niveau: '5ème' },
+    profil: { prenom: 'Zoé-test', niveau: '5ème' },
     tentatives: [TENTATIVE, { ...TENTATIVE, id: 'id-2', correct: true, date: '2026-11-11T10:00:00.000Z' }],
     cours: [
       { id: 'c-1', matiere: 'SVT', titre: 'La cellule', resume: 'Tout être vivant…', notions: ['noyau', 'membrane'], date: '2026-11-10' },
@@ -352,7 +352,7 @@ test('chaque parent lit le profil, les réponses et les cours de l\'enfant', asy
     const reponse = await lireSuivi(env, code);
     assert.equal(reponse.status, 200);
     const suivi = await reponse.json();
-    assert.equal(suivi.profil.prenom, 'Léa');
+    assert.equal(suivi.profil.prenom, 'Zoé-test');
     assert.equal(suivi.nbCours, 2);
     // Derniers cours, plus récent d'abord, notions déjà décodées ; jamais de photo
     assert.deepEqual(suivi.cours.map(c => c.titre), ['Fractions', 'La cellule']);
@@ -518,6 +518,24 @@ test('les questions d\'un défi sont contrôlées', async () => {
   for (const questions of [[], 'x', [{ type: 'ouverte', enonce: 'e' }], Array.from({ length: 16 }, () => QUESTIONS_DEFI[1])]) {
     assert.equal((await defis(env, '', { methode: 'POST', corps: { id: 'd', questions } })).statut, 400);
   }
+  // Questions incomplètes : l'écran de quiz planterait chez les autres joueurs
+  const incompletes = [
+    { type: 'qcm', enonce: 'e' },
+    { type: 'qcm', enonce: 'e', choix: ['a', 'b'], correctIndex: 5 },
+    { type: 'qcm-multi', enonce: 'e', choix: ['a', 'b'], correctIndexes: [] },
+    { type: 'num', enonce: 'e', answer: '3' },
+    { type: 'court', enonce: 'e', reponses: [] }
+  ];
+  for (const q of incompletes) {
+    assert.equal((await defis(env, '', { methode: 'POST', corps: { id: 'd', questions: [q] } })).statut, 400, JSON.stringify(q));
+  }
+});
+
+test('une adresse mal encodée renvoie 400 au lieu de faire planter le Worker', async () => {
+  const env = { ...ENV, DB: faireD1() };
+  assert.equal((await defis(env, '/%E0%A4%A')).statut, 400);
+  const reponse = await worker.fetch(new Request('https://exemple.test/api/parent/cours/%ZZ', { headers: { 'x-access-code': 'code-parent-un' } }), env);
+  assert.equal(reponse.status, 400);
 });
 
 test("les réponses des autres ne sont visibles qu'après avoir joué", async () => {
@@ -632,7 +650,7 @@ test('quand un joueur termine, les autres sont prévenus sans le score', async (
   const telEnfant = await faireTelephone('enfant'), telPapa = await faireTelephone('papa');
   await abonner(env, ENV.ACCESS_CODE, telEnfant);
   await abonner(env, 'code-parent-un', telPapa);
-  await defis(env, '', { methode: 'POST', corps: { id: 'd1', titre: 'Volcans', questions: QUESTIONS_DEFI, surnom: 'Léa' } });
+  await defis(env, '', { methode: 'POST', corps: { id: 'd1', titre: 'Volcans', questions: QUESTIONS_DEFI, surnom: 'Zoé-test' } });
   envois = [];
   await defis(env, '/d1/participation', { code: 'code-parent-un', methode: 'POST', corps: { score: 2, surnom: 'Papa' } });
   let [push] = envois.filter(e => e.url.startsWith('https://web.push.apple.com/'));
@@ -645,15 +663,26 @@ test('quand un joueur termine, les autres sont prévenus sans le score', async (
   await defis(env, '/d1/participation', { methode: 'POST', corps: { score: 1 } });
   [push] = envois.filter(e => e.url.startsWith('https://web.push.apple.com/'));
   message = await dechiffrer(push.corps, telPapa);
-  assert.equal(message.corps, 'Léa a terminé « Volcans » : découvrez qui a gagné !');
+  assert.equal(message.corps, 'Zoé-test a terminé « Volcans » : découvrez qui a gagné !');
   assert.equal(message.badge, 0);
+  // La pastille ne compte que les défis visibles dans la liste (les 30 derniers)
+  for (let i = 0; i < 31; i++) {
+    env.DB.lire(`INSERT INTO defis (id, lance_par, questions, cree_le) VALUES ('vieux-${i}', 'enfant', '[]', '2020-01-${String(i % 28 + 1).padStart(2, '0')}T${String(i).padStart(2, '0')}')`);
+  }
+  envois = [];
+  await defis(env, '', { methode: 'POST', corps: { id: 'd2', titre: 'Encore', questions: QUESTIONS_DEFI } });
+  [push] = envois.filter(e => e.url.startsWith('https://web.push.apple.com/'));
+  message = await dechiffrer(push.corps, telPapa);
+  assert.equal(message.badge, 29, '30 derniers défis dont « Volcans » déjà joué (32 sans la limite)');
 });
 
 test("un abonnement vers une adresse inconnue est refusé, un abonnement expiré est supprimé", async () => {
   const { env } = await envPush();
   const tel = await faireTelephone('x');
-  tel.abonnement.endpoint = 'https://pirate.example/collecte';
-  assert.equal((await abonner(env, ENV.ACCESS_CODE, tel)).status, 400);
+  for (const endpoint of ['https://pirate.example/collecte', 'http://web.push.apple.com/x', 'https://web.push.apple.com.pirate.example/x', 'https://pirateweb.push.apple.com/x']) {
+    tel.abonnement.endpoint = endpoint;
+    assert.equal((await abonner(env, ENV.ACCESS_CODE, tel)).status, 400, endpoint);
+  }
   const telOk = await faireTelephone('expire');
   await abonner(env, ENV.ACCESS_CODE, telOk);
   globalThis.fetch = async () => new Response('', { status: 410 });

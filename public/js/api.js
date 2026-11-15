@@ -16,7 +16,11 @@ async function lireReponse(response) {
   } catch {
     // Corps illisible : traité ci-dessous avec le statut HTTP
   }
-  if (!response.ok) throw new Error(data?.error?.message || `Erreur HTTP ${response.status}`);
+  if (!response.ok) {
+    const err = new Error(data?.error?.message || `Erreur HTTP ${response.status}`);
+    err.status = response.status; // pour reconnaître un cas précis (409 « déjà joué ») sans lire le texte
+    throw err;
+  }
   if (data === null) throw new Error('Réponse illisible du serveur.');
   return data;
 }

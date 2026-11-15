@@ -5,12 +5,14 @@ let questionRecorded = false;
 let attemptCount = 0;
 const MAX_ATTEMPTS = 2;
 
-// Démarre un quiz : remet les compteurs à zéro et affiche la première question.
-function startQuiz(quiz) {
+// Démarre un quiz et affiche la première question ; « dejaRepondu » (reprise d'un défi interrompu)
+// reprend les premières réponses et repart à la question suivante.
+function startQuiz(quiz, dejaRepondu = []) {
   currentQuiz = quiz;
-  currentQuestionIndex = 0;
-  sessionResults = [];
-  renderQuizQuestion();
+  sessionResults = dejaRepondu.slice();
+  currentQuestionIndex = sessionResults.length;
+  if (currentQuestionIndex >= quiz.questions.length) renderQuizResult();
+  else renderQuizQuestion();
 }
 
 // ── Fabrication du HTML (fonctions pures, testées) ──
@@ -293,6 +295,7 @@ function recordAttempt(question, correct, reponseDonnee = null) {
   };
   state.attempts.push(attempt);
   sessionResults.push(attempt);
+  currentQuiz.apresReponse?.(sessionResults); // crochet facultatif (défi : progression gardée pour une reprise)
   enregistrerEtPartager();
 }
 
@@ -308,7 +311,7 @@ function nextQuestion() {
 
 // Écran de résultat : score, notions à retravailler et, s'il y a eu des erreurs, le cours sur mesure.
 function renderQuizResult() {
-  if (currentQuiz.defiId) return terminerDefi(currentQuiz, sessionResults); // défi en famille (defis.js)
+  if (currentQuiz.terminer) return currentQuiz.terminer(sessionResults); // fin propre au mode de jeu (défi : defis.js)
   const total = sessionResults.length;
   const correctCount = sessionResults.filter(r => r.correct).length;
   const weakNotions = [...new Set(sessionResults.filter(r => !r.correct).map(r => r.notion))];

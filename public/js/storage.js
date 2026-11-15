@@ -19,6 +19,7 @@ const DEFAULT_STATE = {
   curriculum: {},
   role: null,
   notificationsMasquees: false, // carte « Activer les notifications » repoussée par « Plus tard »
+  defisEnCours: {},             // défis commencés non terminés : id → réponses déjà données (reprise après abandon)
   infoContenuVue: false, // message « tes fiches et cartes sont visibles par tes parents » déjà vu
   reprise: null // null = l'enfant n'a pas encore vu l'écran de partage, 'faite' = vu (voir sync.js)
 };
