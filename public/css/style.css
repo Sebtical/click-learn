@@ -1158,3 +1158,36 @@ button.avatar {
 }
 
 .info-contenu p { margin: 0 0 10px; }
+
+/* ── Défis en famille ── */
+.bandeau-defi {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 14px;
+  text-align: left;
+  background: linear-gradient(135deg, var(--peach-2), var(--card));
+  color: var(--ink);
+}
+
+.bandeau-defi small { display: block; color: var(--ink-2); font-weight: 600; }
+.bandeau-emoji { font-size: 1.8rem; }
+
+.defi-liste { list-style: none; padding: 0; margin: 0 0 14px; display: grid; gap: 10px; }
+
+.defi-ligne {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: var(--soft);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.defi-ligne small { display: block; color: var(--ink-2); font-weight: 600; }
+.defi-reponses { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; }
+#defi-nouveau { width: 100%; margin: 6px 0 14px; }

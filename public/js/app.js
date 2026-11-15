@@ -215,6 +215,7 @@ function renderHome() {
 
       ${infoContenuHtml()}
       ${carteNotificationsHtml()}
+      <div id="bandeau-defis"></div>
       <section class="level-card${ILLUSTRATIONS.banniere ? ' avec-banniere' : ''}">
         ${banniereHtml()}
         <div class="level-text">
@@ -232,6 +233,10 @@ function renderHome() {
 
       <h2 class="section-title">Pars d'un cours précis</h2>
       <div class="action-cards">
+        <button id="defis-btn" class="action-card">
+          <span class="action-art">${illustration('trophee', '<span class="emoji">🏆</span>')}</span>
+          <span><strong>Défis en famille</strong><small>Un même quiz pour tous : qui fera le meilleur score ?</small></span>
+        </button>
         <button id="capture-btn" class="action-card">
           <span class="action-art">${illustration('photo', '<span class="emoji">📷</span>')}</span>
           <span><strong>Ajouter un cours</strong><small>Prends ta leçon en photo, je prépare un quiz.</small></span>
@@ -254,6 +259,8 @@ function renderHome() {
   `;
 
   // Branchement des boutons
+  document.getElementById('defis-btn').addEventListener('click', renderDefis);
+  actualiserBandeauDefis(); // bandeau « défi en attente » et pastille, sans bloquer l'accueil
   // Notifications : activation (la demande d'autorisation suit directement le toucher) ou « Plus tard »
   document.getElementById('notifs-activer')?.addEventListener('click', async e => {
     e.currentTarget.disabled = true;

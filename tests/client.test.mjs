@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 
-const SCRIPTS = ['storage', 'api', 'prompts', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent', 'quiz', 'cours', 'carte', 'notifications'];
+const SCRIPTS = ['storage', 'api', 'prompts', 'habillage', 'quizkit', 'figures-maths', 'generators-maths', 'generators-francais', 'localquiz', 'sync', 'parent', 'quiz', 'cours', 'carte', 'notifications', 'defis'];
 const bacASable = vm.createContext({
   console, setTimeout, atob,
   navigator: {}, // navigateur sans service worker : comme Safari quand l'appli n'est pas installée
@@ -718,4 +718,64 @@ test("le service worker affiche le message et pose la pastille, sans rien d'autr
   assert.doesNotMatch(sw, /caches\./, 'aucun cache : la version en ligne reste toujours la bonne');
   const manifeste = JSON.parse(readFileSync(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8'));
   assert.equal(manifeste.display, 'standalone');
+});
+
+// ── Défis en famille ──
+const DONNEES_DEFIS = {
+  moi: 'enfant', surnoms: { enfant: 'Léa', parent1: PIEGE },
+  defis: [
+    { id: 'd2', lance_par: 'parent1', titre: PIEGE, matiere: 'Maths', a_joue: false, participations: [{ joueur: 'parent1', termine_le: 't' }] },
+    { id: 'd1', lance_par: 'enfant', titre: 'Volcans', matiere: 'SVT', a_joue: true, participations: [{ joueur: 'enfant', score: 8, total: 10 }, { joueur: 'parent1', score: 9, total: 10 }] }
+  ]
+};
+
+test('le bandeau montre le défi en attente, échappé, avec le nom du lanceur', () => {
+  const html = appli('bandeauDefisHtml')(DONNEES_DEFIS);
+  assert.ok(!html.includes('<img'));
+  assert.ok(html.includes('data-defi="d2"'));
+  assert.equal(appli('bandeauDefisHtml')({ ...DONNEES_DEFIS, defis: [DONNEES_DEFIS.defis[1]] }), '', 'rien si tout est joué');
+  assert.equal(appli('defisEnAttente')(DONNEES_DEFIS.defis).length, 1);
+});
+
+test('la liste sépare défis à jouer et terminés, scores visibles seulement quand le serveur les donne', () => {
+  const html = appli('listeDefisHtml')(DONNEES_DEFIS);
+  assert.ok(html.indexOf('À jouer') < html.indexOf('Terminés'));
+  assert.ok(html.includes('Toi 8/10'));
+  assert.ok(!html.includes('<img'));
+  assert.ok(html.includes(' ✓'), "un joueur dont le score est caché apparaît juste comme ayant joué");
+});
+
+test('les résultats classent les joueurs et montrent les réponses de chacun, échappées', () => {
+  const html = appli('resultatsDefiHtml')({
+    moi: 'enfant', surnoms: { parent1: 'Papa' },
+    defi: { titre: 'Fractions', matiere: 'Maths', questions: [{ type: 'num', enonce: PIEGE, answer: 3 }] },
+    participations: [
+      { joueur: 'enfant', score: 0, total: 1, reponses: [{ reponse: PIEGE, correct: false }] },
+      { joueur: 'parent1', score: 1, total: 1, reponses: [{ reponse: '3', correct: true }] }
+    ]
+  });
+  assert.ok(!html.includes('<img src=x'), 'texte piégé échappé');
+  assert.ok(html.indexOf('🏆 Papa') < html.indexOf('Toi'), 'le meilleur score en premier');
+  assert.ok(html.includes('Bonne réponse : <strong>3</strong>'));
+  assert.ok(html.includes('✅ Papa : 3'));
+  assert.match(html, /pas encore joué/);
+});
+
+test('un défi ne garde que 10 questions jouables, sans figure ni question ouverte', () => {
+  const questions = [{ type: 'qcm', enonce: 'a', fig: '<svg>' }, { type: 'ouverte', enonce: 'b' }, ...Array.from({ length: 12 }, (_, i) => ({ id: 'x', type: 'num', enonce: `q${i}`, answer: i }))];
+  const gardees = appli('questionsPourDefi')(questions);
+  assert.equal(gardees.length, 10);
+  assert.ok(gardees.every(q => q.type === 'num' && q.id === undefined));
+});
+
+test("seuls les chapitres capables de fournir des questions sans figure sont proposés en défi", () => {
+  const chapitres = appli('chapitresPourDefi')();
+  const ids = chapitres.map(c => c.theme.id);
+  assert.ok(ids.includes('fractions'));
+  assert.ok(!ids.includes('angles'), "les angles ne se posent qu'avec une figure");
+  for (const c of chapitres) {
+    const questions = appli('questionsChapitre')(c.matiere, c.theme.id);
+    assert.ok(questions.length >= 5, `${c.matiere} ${c.theme.id}`);
+    assert.ok(questions.every(q => !q.fig));
+  }
 });

@@ -308,6 +308,7 @@ function nextQuestion() {
 
 // Écran de résultat : score, notions à retravailler et, s'il y a eu des erreurs, le cours sur mesure.
 function renderQuizResult() {
+  if (currentQuiz.defiId) return terminerDefi(currentQuiz, sessionResults); // défi en famille (defis.js)
   const total = sessionResults.length;
   const correctCount = sessionResults.filter(r => r.correct).length;
   const weakNotions = [...new Set(sessionResults.filter(r => !r.correct).map(r => r.notion))];
