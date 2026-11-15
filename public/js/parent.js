@@ -1,37 +1,18 @@
-// Espace parent : suivi de l'enfant lu depuis le serveur (/api/parent/suivi), réservé aux codes parents.
-// Tout texte venant de la base passe par echapperHtml avant d'être affiché.
+// Accueil et espace parent : tableau de bord de l'enfant en onglets (Vue d'ensemble · Cours · Erreurs ·
+// Progression · Défis), lu depuis le serveur et réservé aux codes parents.
+// Règle dure : tout texte venant de la base passe par echapperHtml avant d'être affiché.
 
 // ── Réglages ──
 const NB_ERREURS_AFFICHEES = 20;
 const NB_QUIZ_HISTORIQUE = 10;
+const ONGLETS_PARENT = [
+  ['ensemble', "Vue d'ensemble"], ['cours', 'Cours'], ['erreurs', 'Erreurs'], ['progression', 'Progression'], ['defis', 'Défis']
+];
 
-// ── Chargement ──
+// Suivi chargé une fois par ouverture de l'accueil parent (évite de le recharger à chaque onglet).
+let suiviParent = null;
 
-// Affiche l'écran d'attente, charge le suivi depuis le serveur, puis l'affiche (ou l'erreur).
-async function renderParentDashboard() {
-  app.innerHTML = `
-    <div class="card card-wide">
-      <h1>👪 Espace parent</h1>
-      <div class="busy"><p>Chargement du suivi...</p></div>
-    </div>`;
-  try {
-    afficherSuivi(await chargerSuivi(state.accessCode));
-  } catch (err) {
-    app.innerHTML = `
-      <div class="card card-wide">
-        <h1>👪 Espace parent</h1>
-        <p class="error">Impossible de charger le suivi : ${echapperHtml(err.message)}</p>
-        <div class="actions">
-          <button id="parent-retry">Réessayer</button>
-          <button id="parent-back" class="secondary">Retour à l'accueil</button>
-        </div>
-      </div>`;
-    document.getElementById('parent-retry').addEventListener('click', renderParentDashboard);
-    document.getElementById('parent-back').addEventListener('click', renderHome);
-  }
-}
-
-// ── Calculs ──
+// ── Calculs (fonctions pures, testées) ──
 
 // Nom lisible d'un chapitre : titre du thème pour Maths/Français, titre tel quel pour les autres matières.
 function libelleChapitre(matiere, theme) {
@@ -61,139 +42,238 @@ function dateCourte(iso) {
   return isNaN(d) ? '—' : d.toLocaleDateString('fr-FR');
 }
 
-// ── Affichage ──
+// Activité des 7 derniers jours : questions, réussite du premier coup, quiz.
+function activiteSemaine(tentatives, maintenant = new Date()) {
+  const depuis = new Date(maintenant.getTime() - 7 * 24 * 3600 * 1000).toISOString();
+  const semaine = tentatives.filter(t => t.date >= depuis);
+  const justes = semaine.filter(t => t.correct).length;
+  return {
+    questions: semaine.length,
+    pct: semaine.length ? pourcentage(justes, semaine.length) : null,
+    quiz: new Set(semaine.map(t => t.quiz_id || t.id)).size
+  };
+}
 
-// Construit l'écran de suivi à partir des données du serveur.
-function afficherSuivi({ profil, tentatives, nbCours, cours: coursRecus = [], tronque }) {
-  // Cartes revalidées une seule fois : celle affichée est aussi celle exportée en image
-  const cours = coursRecus.map(c => ({ ...c, carte: validerCarteMentale(c.carte) }));
-  // Aucune donnée partagée : on explique comment démarrer
-  if (!profil && tentatives.length === 0) {
-    app.innerHTML = `
-      <div class="card card-wide">
-        <h1>👪 Espace parent</h1>
-        <p>Aucun résultat partagé pour l'instant.</p>
-        <p class="subtitle">Ouvre l'appli sur l'appareil de ton enfant, avec son code : elle lui proposera de partager ses résultats.</p>
-        <div class="actions"><button id="parent-back">Retour à l'accueil</button></div>
-      </div>`;
-    document.getElementById('parent-back').addEventListener('click', renderHome);
-    return;
-  }
+// ── Gabarits des onglets (fonctions pures, testées) ──
 
-  // Indicateurs généraux
-  const total = tentatives.length;
-  const justes = tentatives.filter(t => t.correct).length;
-  const pct = total ? pourcentage(justes, total) : null;
-  const nbQuiz = new Set(tentatives.map(t => t.quiz_id || t.id)).size;
-  const derniere = tentatives[0]?.date; // le serveur renvoie la plus récente en premier
+// Barre d'onglets, l'onglet actif mis en avant.
+function ongletsParentHtml(actif) {
+  return `<nav class="onglets" role="tablist">${ONGLETS_PARENT.map(([id, libelle]) =>
+    `<button class="onglet${id === actif ? ' actif' : ''}" role="tab" aria-selected="${id === actif}" data-onglet="${id}">${libelle}</button>`).join('')}</nav>`;
+}
 
-  // Regroupements : matière, chapitre, notion, quiz
-  const parMatiere = regrouper(tentatives, t => t.matiere || 'Autre').sort((a, b) => a.cle.localeCompare(b.cle));
-  const parChapitre = regrouper(tentatives, t => `${t.matiere || 'Autre'}|${t.theme || ''}`)
-    .sort((a, b) => a.cle.localeCompare(b.cle) || a.pct - b.pct);
-  const aRetravailler = regrouper(tentatives, t => t.notion || '(non précisé)')
-    .filter(n => n.justes < n.total).sort((a, b) => a.pct - b.pct).slice(0, 5);
-  const historique = regrouper(tentatives, t => t.quiz_id || t.id)
-    .sort((a, b) => b.derniere.localeCompare(a.derniere)).slice(0, NB_QUIZ_HISTORIQUE);
-  const erreurs = tentatives.filter(t => !t.correct).slice(0, NB_ERREURS_AFFICHEES);
-
-  // Gabarits des listes
-  const lignesMatieres = parMatiere.map(m =>
-    `<li><span>${echapperHtml(m.cle)}</span><span>${m.justes}/${m.total} (${m.pct}%)</span></li>`).join('');
-  const lignesChapitres = parChapitre.map(c => {
-    const [matiere, theme] = c.cle.split('|');
-    return `<li><span>${echapperHtml(matiere)} — ${echapperHtml(libelleChapitre(matiere, theme))}</span><span>${masteryBadge(c.pct)} <small>${c.total} q.</small></span></li>`;
-  }).join('');
-  const lignesFaibles = aRetravailler.map(n =>
-    `<li><span>${echapperHtml(n.cle)}</span><span>${n.justes}/${n.total}</span></li>`).join('');
-  const lignesErreurs = erreurs.map(t => `
-    <li class="exercise-item">
-      <p class="subtitle">${dateCourte(t.date)} — ${echapperHtml(t.matiere)} — ${echapperHtml(t.notion)}</p>
-      <p class="ex-statement">🔴 ${echapperHtml(t.enonce || '(énoncé non conservé)')}</p>
-      <p class="hint">Sa réponse : <strong>${t.reponse_donnee ? echapperHtml(t.reponse_donnee) : '<em>non conservée</em>'}</strong>
-        ${t.bonne_reponse ? `<br>Bonne réponse : <strong>${echapperHtml(t.bonne_reponse)}</strong>` : ''}</p>
-    </li>`).join('');
-  const lignesCours = cours.map((c, i) => `
+// Ligne d'un cours (titre, résumé, notions) avec les boutons de son contenu, chargé au clic.
+function ligneCoursHtml(c) {
+  return `
     <li class="exercise-item">
       <p class="subtitle">${dateCourte(c.date)} — ${echapperHtml(c.matiere || 'Cours')}${c.type === 'sur-mesure' ? ' · cours sur mesure' : ''}</p>
       <p class="ex-statement">📚 ${echapperHtml(c.titre || '(sans titre)')}</p>
       ${c.resume ? `<p>${echapperHtml(c.resume)}</p>` : ''}
       ${c.notions?.length ? `<p class="hint">Notions : ${echapperHtml(c.notions.join(', '))}</p>` : ''}
-      ${boutonsContenuCours(c, i)}
-      <div class="cours-contenu" id="cours-contenu-${i}"></div>
-    </li>`).join('');
-  const lignesHistorique = historique.map(h =>
-    `<li><span>${dateCourte(h.derniere)} — ${echapperHtml(h.matiere)}</span><span>${h.justes}/${h.total}</span></li>`).join('');
-
-  // Page complète
-  app.innerHTML = `
-    <div class="card card-wide">
-      <h1>👪 Espace parent</h1>
-      <p class="subtitle">Suivi de ${echapperHtml(profil?.prenom || 'ton enfant')}${profil?.niveau ? ` — niveau ${echapperHtml(profil.niveau)}` : ''}
-        ${derniere ? `<br>Dernière activité : ${dateCourte(derniere)}` : ''}
-        ${tronque ? `<br>Chiffres calculés sur les ${fmtNum(total)} dernières réponses.` : ''}</p>
-
-      <div class="kpis">
-        <div class="kpi"><b>${nbCours}</b><span>Cours ajoutés</span></div>
-        <div class="kpi"><b>${nbQuiz}</b><span>Quiz faits</span></div>
-        <div class="kpi"><b>${total}</b><span>Questions répondues</span></div>
-        <div class="kpi"><b>${pct !== null ? pct + '%' : '—'}</b><span>Réussite du 1er coup</span></div>
-      </div>
-
-      ${lignesMatieres ? `<div class="parent-section"><h3>Par matière</h3><ul class="notion-list">${lignesMatieres}</ul></div>` : ''}
-
-      ${lignesChapitres ? `<div class="parent-section"><h3>Maîtrise par chapitre</h3><ul class="notion-list">${lignesChapitres}</ul></div>` : ''}
-
-      <div class="parent-section">
-        <h3>🔴 Points à retravailler</h3>
-        ${lignesFaibles ? `<ul class="notion-list weak">${lignesFaibles}</ul>` : '<p class="subtitle">Pas encore assez de données.</p>'}
-      </div>
-
-      <div class="parent-section">
-        <h3>Dernières réponses fausses</h3>
-        ${lignesErreurs ? `<ul class="exercise-list">${lignesErreurs}</ul>` : '<p class="subtitle">Aucune erreur pour le moment. 🎉</p>'}
-      </div>
-
-      <div class="parent-section">
-        <h3>📚 Ses derniers cours</h3>
-        ${lignesCours ? `<ul class="exercise-list">${lignesCours}</ul>` : '<p class="subtitle">Aucun cours ajouté pour le moment.</p>'}
-      </div>
-
-      <div class="parent-section">
-        <h3>Historique récent</h3>
-        ${lignesHistorique ? `<ul class="history-list">${lignesHistorique}</ul>` : '<p class="subtitle">Aucun quiz effectué pour le moment.</p>'}
-      </div>
-
-      <div class="actions">
-        <button id="parent-back">Retour à l'accueil</button>
-      </div>
-    </div>`;
-
-  document.getElementById('parent-back').addEventListener('click', renderHome);
-  // Fiche, explications ou carte d'un cours : une seule visionneuse ouverte à la fois
-  document.querySelectorAll('.voir-contenu').forEach(btn => btn.addEventListener('click', () => {
-    const c = cours[Number(btn.dataset.i)];
-    document.querySelectorAll('.cours-contenu').forEach(zone => { zone.innerHTML = ''; });
-    document.getElementById(`cours-contenu-${btn.dataset.i}`).innerHTML = contenuCoursHtml(c, btn.dataset.vue);
-    if (btn.dataset.vue === 'carte') brancherExportCarte(c.carte, c.titre);
-  }));
+      ${boutonsContenuCours(c)}
+      <div class="cours-contenu" data-contenu="${echapperHtml(c.id)}"></div>
+    </li>`;
 }
 
 // Boutons d'un cours selon ce que l'enfant a créé : fiche, explications (cours sur mesure), carte mentale.
-function boutonsContenuCours(c, i) {
+function boutonsContenuCours(c) {
   const boutons = [];
-  if (c.fiche) boutons.push(['fiche', '📖 Voir la fiche']);
-  if (c.explications?.length) boutons.push(['explications', '✨ Voir les explications']);
-  if (c.carte) boutons.push(['carte', '🧠 Voir la carte mentale']);
+  if (c.a_fiche) boutons.push(['fiche', '📖 Voir la fiche']);
+  if (c.a_explications) boutons.push(['explications', '✨ Voir les explications']);
+  if (c.a_carte) boutons.push(['carte', '🧠 Voir la carte mentale']);
   return boutons.length
-    ? `<div class="actions">${boutons.map(([vue, libelle]) => `<button class="secondary voir-contenu" data-i="${i}" data-vue="${vue}">${libelle}</button>`).join('')}</div>`
+    ? `<div class="actions">${boutons.map(([vue, libelle]) => `<button class="secondary voir-contenu" data-cours="${echapperHtml(c.id)}" data-vue="${vue}">${libelle}</button>`).join('')}</div>`
     : '';
 }
 
 // Contenu affiché sous un cours : fiche détaillée, explications d'un cours sur mesure ou carte mentale.
 // Tout passe par les gabarits de cours.js et carte.js, qui échappent les textes.
-function contenuCoursHtml(c, vue) {
-  if (vue === 'fiche') return ficheDetailleeHtml({ fiche: c.fiche });
-  if (vue === 'explications') return explicationsHtml(c.explications);
-  return carteMentaleHtml(c.carte);
+function contenuCoursHtml(contenu, vue) {
+  if (vue === 'fiche') return contenu.fiche ? ficheDetailleeHtml({ fiche: contenu.fiche }) : '';
+  if (vue === 'explications') return explicationsHtml(Array.isArray(contenu.explications) ? contenu.explications : []);
+  const carte = validerCarteMentale(contenu.carte);
+  return carte ? carteMentaleHtml(carte) : '<p class="subtitle">Carte illisible.</p>';
+}
+
+// Vue d'ensemble : activité de la semaine, défis en attente, derniers cours, points à retravailler.
+function ensembleHtml(suivi) {
+  const { tentatives, cours = [], nbCours } = suivi;
+  const semaine = activiteSemaine(tentatives);
+  const faibles = regrouper(tentatives, t => t.notion || '(non précisé)')
+    .filter(n => n.justes < n.total).sort((a, b) => a.pct - b.pct).slice(0, 3);
+  return `
+    <div class="kpis">
+      <div class="kpi"><b>${semaine.questions}</b><span>Questions cette semaine</span></div>
+      <div class="kpi"><b>${semaine.pct !== null ? semaine.pct + '%' : '—'}</b><span>Réussite du 1er coup</span></div>
+      <div class="kpi"><b>${semaine.quiz}</b><span>Quiz cette semaine</span></div>
+      <div class="kpi"><b>${nbCours}</b><span>Cours ajoutés</span></div>
+    </div>
+    <div id="bandeau-defis"></div>
+    <div class="parent-section">
+      <h3>📚 Ses derniers cours</h3>
+      ${cours.length ? `<ul class="exercise-list">${cours.slice(0, 3).map(ligneCoursHtml).join('')}</ul>
+        <button class="secondary" data-onglet="cours">Tous ses cours →</button>` : '<p class="subtitle">Aucun cours ajouté pour le moment.</p>'}
+    </div>
+    <div class="parent-section">
+      <h3>🔴 Points à retravailler</h3>
+      ${faibles.length ? `<ul class="notion-list weak">${faibles.map(n => `<li><span>${echapperHtml(n.cle)}</span><span>${n.justes}/${n.total}</span></li>`).join('')}</ul>` : '<p class="subtitle">Pas encore assez de données.</p>'}
+    </div>`;
+}
+
+// Erreurs : dernières réponses fausses, avec sa réponse et la bonne.
+function erreursHtml(tentatives) {
+  const erreurs = tentatives.filter(t => !t.correct).slice(0, NB_ERREURS_AFFICHEES);
+  if (!erreurs.length) return '<p class="subtitle">Aucune erreur pour le moment. 🎉</p>';
+  return `<ul class="exercise-list">${erreurs.map(t => `
+    <li class="exercise-item">
+      <p class="subtitle">${dateCourte(t.date)} — ${echapperHtml(t.matiere)} — ${echapperHtml(t.notion)}</p>
+      <p class="ex-statement">🔴 ${echapperHtml(t.enonce || '(énoncé non conservé)')}</p>
+      <p class="hint">Sa réponse : <strong>${t.reponse_donnee ? echapperHtml(t.reponse_donnee) : '<em>non conservée</em>'}</strong>
+        ${t.bonne_reponse ? `<br>Bonne réponse : <strong>${echapperHtml(t.bonne_reponse)}</strong>` : ''}</p>
+    </li>`).join('')}</ul>`;
+}
+
+// Progression : par matière, maîtrise par chapitre, points faibles et historique des quiz.
+function progressionHtml(tentatives, tronque) {
+  const parMatiere = regrouper(tentatives, t => t.matiere || 'Autre').sort((a, b) => a.cle.localeCompare(b.cle));
+  const parChapitre = regrouper(tentatives, t => `${t.matiere || 'Autre'}|${t.theme || ''}`)
+    .sort((a, b) => a.cle.localeCompare(b.cle) || a.pct - b.pct);
+  const faibles = regrouper(tentatives, t => t.notion || '(non précisé)')
+    .filter(n => n.justes < n.total).sort((a, b) => a.pct - b.pct).slice(0, 5);
+  const historique = regrouper(tentatives, t => t.quiz_id || t.id)
+    .sort((a, b) => b.derniere.localeCompare(a.derniere)).slice(0, NB_QUIZ_HISTORIQUE);
+  const liste = (titre, lignes, classe = 'notion-list') => lignes.length
+    ? `<div class="parent-section"><h3>${titre}</h3><ul class="${classe}">${lignes.join('')}</ul></div>` : '';
+  return `
+    ${tronque ? `<p class="subtitle">Chiffres calculés sur les ${fmtNum(tentatives.length)} dernières réponses.</p>` : ''}
+    ${liste('Par matière', parMatiere.map(m => `<li><span>${echapperHtml(m.cle)}</span><span>${m.justes}/${m.total} (${m.pct}%)</span></li>`))}
+    ${liste('Maîtrise par chapitre', parChapitre.map(c => {
+      const [matiere, theme] = c.cle.split('|');
+      return `<li><span>${echapperHtml(matiere)} — ${echapperHtml(libelleChapitre(matiere, theme))}</span><span>${masteryBadge(c.pct)} <small>${c.total} q.</small></span></li>`;
+    }))}
+    ${liste('🔴 Points à retravailler', faibles.map(n => `<li><span>${echapperHtml(n.cle)}</span><span>${n.justes}/${n.total}</span></li>`), 'notion-list weak')}
+    ${liste('Historique récent', historique.map(h => `<li><span>${dateCourte(h.derniere)} — ${echapperHtml(h.matiere)}</span><span>${h.justes}/${h.total}</span></li>`), 'history-list')}
+    ${!tentatives.length ? '<p class="subtitle">Aucun quiz effectué pour le moment.</p>' : ''}`;
+}
+
+// ── Écrans ──
+
+// Accueil parent : en-tête de l'enfant, onglets, contenu de l'onglet choisi (Vue d'ensemble par défaut).
+async function renderParentDashboard(onglet = 'ensemble', recharger = true) {
+  if (recharger || !suiviParent) {
+    app.innerHTML = `<div class="card card-wide"><h1>👪 Suivi</h1><div class="busy"><p>Chargement du suivi...</p></div></div>`;
+    try {
+      suiviParent = await chargerSuivi(state.accessCode);
+    } catch (err) {
+      app.innerHTML = `<div class="card card-wide"><h1>👪 Suivi</h1>
+        <p class="error">Impossible de charger le suivi : ${echapperHtml(err.message)}</p>
+        <div class="actions"><button id="parent-retry">Réessayer</button><button id="edit-config" class="secondary">Modifier la configuration</button></div></div>`;
+      document.getElementById('parent-retry').addEventListener('click', () => renderParentDashboard());
+      document.getElementById('edit-config').addEventListener('click', renderSetup);
+      return;
+    }
+  }
+  const { profil } = suiviParent;
+  const derniere = suiviParent.tentatives[0]?.date;
+  app.innerHTML = `
+    <div class="card card-wide">
+      <header class="home-head">
+        <div>
+          <h1>Suivi de ${echapperHtml(profil?.prenom || 'ton enfant')}</h1>
+          <p class="subtitle">${profil?.niveau ? `${echapperHtml(profil.niveau)} · ` : ''}${derniere ? `dernière activité le ${dateCourte(derniere)}` : 'pas encore d\'activité partagée'}</p>
+        </div>
+      </header>
+      ${carteNotificationsHtml()}
+      ${ongletsParentHtml(onglet)}
+      <div id="onglet-contenu"></div>
+      <div class="home-foot"><button id="edit-config" class="link">Modifier la configuration</button></div>
+    </div>`;
+  document.querySelectorAll('.onglets [data-onglet]').forEach(b => b.addEventListener('click', () => renderParentDashboard(b.dataset.onglet, false)));
+  document.getElementById('edit-config').addEventListener('click', renderSetup);
+  brancherNotificationsAccueil();
+  afficherOnglet(onglet);
+}
+
+// Remplit la zone de l'onglet choisi et branche ses boutons.
+async function afficherOnglet(onglet) {
+  const zone = document.getElementById('onglet-contenu');
+  const { tentatives, tronque } = suiviParent;
+  if (onglet === 'ensemble') {
+    zone.innerHTML = ensembleHtml(suiviParent);
+    zone.querySelectorAll('[data-onglet]').forEach(b => b.addEventListener('click', () => renderParentDashboard(b.dataset.onglet, false)));
+    actualiserBandeauDefis();
+  } else if (onglet === 'erreurs') {
+    zone.innerHTML = erreursHtml(tentatives);
+  } else if (onglet === 'progression') {
+    zone.innerHTML = progressionHtml(tentatives, tronque);
+  } else if (onglet === 'defis') {
+    zone.innerHTML = '<div class="busy"><p>Chargement des défis...</p></div>';
+    try {
+      const donnees = await chargerDefis(state.accessCode);
+      mettreAJourPastille(defisEnAttente(donnees.defis).length);
+      zone.innerHTML = `<button id="defi-nouveau">➕ Lancer un défi</button>${listeDefisHtml(donnees)}`;
+      document.getElementById('defi-nouveau').addEventListener('click', renderNouveauDefi);
+      zone.querySelectorAll('[data-defi]').forEach(b => b.addEventListener('click', () => ouvrirDefi(b.dataset.defi)));
+    } catch (err) {
+      zone.innerHTML = `<p class="error">Impossible de charger les défis : ${echapperHtml(err.message)}</p>`;
+    }
+    return;
+  } else if (onglet === 'cours') {
+    return afficherPageCours(zone, 0, '');
+  }
+  brancherContenuCours(zone);
+}
+
+// Onglet Cours : une page de cours (20), filtrable par matière, avec « Plus de cours » s'il en reste.
+async function afficherPageCours(zone, page, matiere) {
+  if (page === 0) zone.innerHTML = '<div class="busy"><p>Chargement des cours...</p></div>';
+  let donnees;
+  try {
+    donnees = await chargerCoursParent(state.accessCode, page, matiere);
+  } catch (err) {
+    zone.innerHTML = `<p class="error">Impossible de charger les cours : ${echapperHtml(err.message)}</p>`;
+    return;
+  }
+  if (page === 0) {
+    zone.innerHTML = `
+      <label>Matière
+        <select id="cours-filtre"><option value="">Toutes</option>${donnees.matieres.map(m => `<option ${m === matiere ? 'selected' : ''}>${echapperHtml(m)}</option>`).join('')}</select>
+      </label>
+      <ul class="exercise-list" id="cours-liste"></ul>
+      <button id="cours-plus" class="secondary">Plus de cours</button>`;
+    document.getElementById('cours-filtre').addEventListener('change', e => afficherPageCours(zone, 0, e.target.value));
+  }
+  const liste = document.getElementById('cours-liste');
+  liste.insertAdjacentHTML('beforeend', donnees.cours.length || page ? donnees.cours.map(ligneCoursHtml).join('') : '<p class="subtitle">Aucun cours.</p>');
+  const plus = document.getElementById('cours-plus');
+  plus.hidden = !donnees.suivant;
+  plus.onclick = () => afficherPageCours(zone, page + 1, matiere);
+  brancherContenuCours(liste);
+}
+
+// Boutons « Voir la fiche / les explications / la carte » d'une zone : contenu chargé au clic, une visionneuse ouverte à la fois.
+function brancherContenuCours(zone) {
+  zone.querySelectorAll('.voir-contenu:not([data-branche])').forEach(btn => {
+    btn.dataset.branche = '1';
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.cours, vue = btn.dataset.vue;
+      document.querySelectorAll('.cours-contenu').forEach(z => { z.innerHTML = ''; });
+      const cible = [...document.querySelectorAll('.cours-contenu')].find(z => z.dataset.contenu === id);
+      cible.innerHTML = '<div class="busy"><p>Chargement...</p></div>';
+      try {
+        const contenu = await chargerContenuCours(state.accessCode, id);
+        cible.innerHTML = contenuCoursHtml(contenu, vue);
+        const carte = vue === 'carte' ? validerCarteMentale(contenu.carte) : null;
+        if (carte) brancherExportCarte(carte, btn.closest('.exercise-item')?.querySelector('.ex-statement')?.textContent || 'cours');
+      } catch (err) {
+        cible.innerHTML = `<p class="error">Impossible d'afficher ce contenu : ${echapperHtml(err.message)}</p>`;
+      }
+    });
+  });
+}
+
+// Compatibilité : l'ancien écran « Espace parent » ouvre désormais l'accueil parent.
+function afficherSuivi(suivi) {
+  suiviParent = suivi;
+  renderParentDashboard('ensemble', false);
 }

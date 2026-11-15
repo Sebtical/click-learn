@@ -14,7 +14,8 @@ const MARGE_REFLEXION = 2000;    // ajoutée par le serveur : la réflexion comp
 const TAILLE_MAX_LOT = 200;      // éléments par envoi /api/sync (le navigateur découpe en lots)
 const LONGUEUR_MAX_TEXTE = 2000; // au-delà, un texte est tronqué avant d'entrer en base
 const LIMITE_SUIVI = 5000;       // réponses les plus récentes renvoyées à l'espace parent
-const LIMITE_COURS_SUIVI = 10;   // derniers cours détaillés dans l'espace parent
+const LIMITE_COURS_SUIVI = 10;   // derniers cours montrés dans la vue d'ensemble parent
+const COURS_PAR_PAGE = 20;       // cours par page dans l'onglet « Cours » de l'espace parent
 const LONGUEUR_MAX_FICHE = 20000; // fiche détaillée d'un cours (quelques pages)
 const LONGUEUR_MAX_EXPLICATION = 6000; // méthode ou exemple d'un cours sur mesure
 const TAILLE_MAX_ENVOI = 2000000;  // caractères d'un envoi /api/sync, refusé au-delà
@@ -333,9 +334,7 @@ async function handleSuivi(request, env) {
          FROM tentatives WHERE joueur = ?1 ORDER BY date DESC LIMIT ?2`
       ).bind('enfant', LIMITE_SUIVI).all(),
       env.DB.prepare('SELECT COUNT(*) AS nb FROM cours WHERE joueur = ?1').bind('enfant').first(),
-      env.DB.prepare(
-        'SELECT matiere, titre, resume, notions, date, type, fiche, carte, explications FROM cours WHERE joueur = ?1 ORDER BY date DESC LIMIT ?2'
-      ).bind('enfant', LIMITE_COURS_SUIVI).all()
+      env.DB.prepare(`SELECT ${COLONNES_COURS_LEGER} FROM cours WHERE joueur = ?1 ORDER BY date DESC LIMIT ?2`).bind('enfant', LIMITE_COURS_SUIVI).all()
     ]);
   } catch {
     return erreur(500, 'Lecture du suivi impossible pour le moment.');
@@ -344,11 +343,50 @@ async function handleSuivi(request, env) {
     profil: profil ?? null,
     tentatives: tentatives.results,
     nbCours: cours?.nb ?? 0,
-    cours: derniersCours.results.map(c => ({
-      ...c, notions: lireNotions(c.notions), carte: lireJson(c.carte), explications: lireJson(c.explications) ?? []
-    })),
+    cours: derniersCours.results.map(coursLeger),
     tronque: tentatives.results.length === LIMITE_SUIVI // l'écran parent le signale : chiffres sur les dernières réponses
   });
+}
+
+// Colonnes d'un cours sans son contenu (fiche, carte, explications), chargé seulement à la demande.
+const COLONNES_COURS_LEGER = `id, matiere, titre, resume, notions, date, type,
+  fiche IS NOT NULL AS a_fiche, carte IS NOT NULL AS a_carte, explications IS NOT NULL AS a_explications`;
+
+// Cours léger prêt à envoyer : notions décodées, indicateurs de contenu en booléens.
+function coursLeger(c) {
+  return { ...c, notions: lireNotions(c.notions), a_fiche: !!c.a_fiche, a_carte: !!c.a_carte, a_explications: !!c.a_explications };
+}
+
+// /api/parent/cours (liste paginée, filtrable par matière) et /api/parent/cours/:id (contenu d'un cours).
+async function handleParentCours(request, env, chemin) {
+  const { refus } = await controlerAcces(request, env, 'GET', ['parent1', 'parent2'], 'Espace réservé aux parents.');
+  if (refus) return refus;
+  const id = decodeURIComponent(chemin.split('/')[4] || '');
+  try {
+    // Contenu d'un cours : fiche, carte et explications, lus au clic
+    if (id) {
+      const c = await env.DB.prepare('SELECT fiche, carte, explications FROM cours WHERE joueur = ?1 AND id = ?2').bind('enfant', id).first();
+      if (!c) return erreur(404, 'Cours introuvable.');
+      return reponseJson(200, { fiche: c.fiche, carte: lireJson(c.carte), explications: lireJson(c.explications) ?? [] });
+    }
+    // Liste paginée : une page de plus est demandée pour savoir s'il en reste
+    const url = new URL(request.url);
+    const page = Math.max(0, Math.min(Number.parseInt(url.searchParams.get('page'), 10) || 0, 500));
+    const matiere = (url.searchParams.get('matiere') || '').slice(0, 100);
+    const filtre = matiere ? ' AND matiere = ?4' : '';
+    const [liste, matieres] = await Promise.all([
+      env.DB.prepare(`SELECT ${COLONNES_COURS_LEGER} FROM cours WHERE joueur = ?1${filtre} ORDER BY date DESC LIMIT ?2 OFFSET ?3`)
+        .bind('enfant', COURS_PAR_PAGE + 1, page * COURS_PAR_PAGE, ...(matiere ? [matiere] : [])).all(),
+      env.DB.prepare('SELECT DISTINCT matiere FROM cours WHERE joueur = ?1 AND matiere IS NOT NULL ORDER BY matiere').bind('enfant').all()
+    ]);
+    return reponseJson(200, {
+      cours: liste.results.slice(0, COURS_PAR_PAGE).map(coursLeger),
+      suivant: liste.results.length > COURS_PAR_PAGE,
+      matieres: matieres.results.map(m => m.matiere)
+    });
+  } catch {
+    return erreur(500, 'Lecture des cours impossible pour le moment.');
+  }
 }
 
 // ── Notifications (Web Push) ──
@@ -713,6 +751,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/api/moi') return handleMoi(request, env);
     if (url.pathname === '/api/parent/suivi') return handleSuivi(request, env);
+    if (url.pathname === '/api/parent/cours' || url.pathname.startsWith('/api/parent/cours/')) return handleParentCours(request, env, url.pathname);
     if (url.pathname === '/api/sync') return handleSync(request, env);
     if (url.pathname === '/api/claude') return handleClaudeProxy(request, env);
     if (url.pathname === '/api/defis' || url.pathname.startsWith('/api/defis/')) return handleDefis(request, env, url.pathname, ctx);

@@ -66,6 +66,17 @@ function envoyerAbonnement(accessCode, abonnement) {
   return appelServeur('/api/notifications', accessCode, { methode: 'POST', corps: abonnement });
 }
 
+// Une page des cours de l'enfant (20), éventuellement d'une seule matière ; réservé aux parents.
+function chargerCoursParent(accessCode, page = 0, matiere = '') {
+  const filtre = matiere ? `&matiere=${encodeURIComponent(matiere)}` : '';
+  return appelServeur(`/api/parent/cours?page=${page}${filtre}`, accessCode);
+}
+
+// Contenu d'un cours de l'enfant (fiche, carte, explications), chargé au clic ; réservé aux parents.
+function chargerContenuCours(accessCode, id) {
+  return appelServeur(`/api/parent/cours/${encodeURIComponent(id)}`, accessCode);
+}
+
 // Derniers défis de la famille, avec ce que ce joueur a le droit de voir.
 function chargerDefis(accessCode) {
   return appelServeur('/api/defis', accessCode);

@@ -1191,3 +1191,35 @@ button.avatar {
 .defi-ligne small { display: block; color: var(--ink-2); font-weight: 600; }
 .defi-reponses { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; }
 #defi-nouveau { width: 100%; margin: 6px 0 14px; }
+
+/* ── Accueil parent : onglets ── */
+.onglets {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  width: 0;          /* ne pousse pas la largeur de la page… */
+  min-width: 100%;   /* …et prend toute la largeur disponible : les onglets défilent si besoin */
+  box-sizing: content-box;
+  margin: 6px -4px 14px;
+  padding: 4px;
+  scrollbar-width: none;
+}
+
+.onglets::-webkit-scrollbar { display: none; }
+
+.onglet {
+  flex: none;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--ink-2);
+  box-shadow: none;
+  font-size: .9rem;
+}
+
+.onglet.actif {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+#cours-plus { width: 100%; margin-top: 12px; }

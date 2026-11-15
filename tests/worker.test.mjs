@@ -357,8 +357,8 @@ test('chaque parent lit le profil, les réponses et les cours de l\'enfant', asy
     // Derniers cours, plus récent d'abord, notions déjà décodées ; jamais de photo
     assert.deepEqual(suivi.cours.map(c => c.titre), ['Fractions', 'La cellule']);
     assert.deepEqual(suivi.cours[1], {
-      matiere: 'SVT', titre: 'La cellule', resume: 'Tout être vivant…', notions: ['noyau', 'membrane'], date: '2026-11-10',
-      type: null, fiche: null, carte: null, explications: []
+      id: 'c-1', matiere: 'SVT', titre: 'La cellule', resume: 'Tout être vivant…', notions: ['noyau', 'membrane'], date: '2026-11-10',
+      type: null, a_fiche: false, a_carte: false, a_explications: false
     });
     assert.deepEqual(suivi.cours[0].notions, []);
     assert.deepEqual(suivi.tentatives.map(t => t.id), ['id-2', 'id-1']); // plus récente d'abord
@@ -386,19 +386,51 @@ test("l'espace parent ne reçoit que les 10 cours les plus récents", async () =
   assert.equal(suivi.cours[0].titre, 'T11');
 });
 
+// Contenu d'un cours, lu par un parent comme au clic sur « Voir la fiche ».
+async function lireContenu(env, id, code = 'code-parent-un') {
+  const reponse = await worker.fetch(new Request(`https://exemple.test/api/parent/cours/${id}`, { headers: { 'x-access-code': code } }), env);
+  return reponse.status === 200 ? reponse.json() : reponse.status;
+}
+
+// Une page de la liste des cours, lue par un parent.
+async function lirePageCours(env, requete = '') {
+  const reponse = await worker.fetch(new Request(`https://exemple.test/api/parent/cours${requete}`, { headers: { 'x-access-code': 'code-parent-un' } }), env);
+  return reponse.json();
+}
+
+test("tous les cours sont consultables page par page, filtrés par matière, réservés aux parents", async () => {
+  const env = { ...ENV, DB: faireD1() };
+  const cours = Array.from({ length: 25 }, (_, i) => ({ id: `c-${i}`, titre: `T${i}`, matiere: i % 5 ? 'Maths' : 'SVT', date: `2026-10-${String(i + 1).padStart(2, '0')}` }));
+  await synchroniser({ cours }, env);
+  const page0 = await lirePageCours(env);
+  assert.equal(page0.cours.length, 20);
+  assert.equal(page0.suivant, true);
+  assert.deepEqual(page0.matieres, ['Maths', 'SVT']);
+  assert.equal(page0.cours[0].titre, 'T24');
+  const page1 = await lirePageCours(env, '?page=1');
+  assert.equal(page1.cours.length, 5);
+  assert.equal(page1.suivant, false);
+  const svt = await lirePageCours(env, '?matiere=SVT');
+  assert.equal(svt.cours.length, 5);
+  assert.ok(svt.cours.every(c => c.matiere === 'SVT'));
+  assert.equal(await lireContenu(env, 'c-1', ENV.ACCESS_CODE), 403);
+  assert.equal(await lireContenu(env, 'inconnu'), 404);
+});
+
 test("la fiche, la carte et les explications d'un cours remontent au parent, complétées après coup", async () => {
   const env = { ...ENV, DB: faireD1() };
   const base = { id: 'c-1', matiere: 'Maths', titre: 'Fractions', date: '2026-11-14' };
   await synchroniser({ cours: [base] }, env);
   const carte = { centre: 'Fractions', branches: [{ titre: 'A', elements: ['x', 4] }, { titre: 'B', elements: [] }], source: 'fiche' };
   await synchroniser({ cours: [{ ...base, type: 'sur-mesure', fiche: '## Titre\n- règle', carte, explications: [{ notion: 'n', methode: 'm' }] }] }, env);
-  const [c] = (await (await lireSuivi(env)).json()).cours;
+  assert.equal((await (await lireSuivi(env)).json()).cours[0].a_fiche, true);
+  const c = await lireContenu(env, 'c-1');
   assert.equal(c.fiche, '## Titre\n- règle');
   assert.deepEqual(c.carte, { centre: 'Fractions', branches: [{ titre: 'A', elements: ['x'] }, { titre: 'B', elements: [] }] });
   assert.deepEqual(c.explications, [{ notion: 'n', erreur: '', methode: 'm', exemple: '' }]);
   // Un envoi sans fiche n'efface pas la fiche déjà reçue
   await synchroniser({ cours: [base] }, env);
-  assert.equal((await (await lireSuivi(env)).json()).cours[0].fiche, '## Titre\n- règle');
+  assert.equal((await lireContenu(env, 'c-1')).fiche, '## Titre\n- règle');
 });
 
 test("un envoi démesuré est refusé avant d'être lu, et le type d'un ancien cours est complété", async () => {
@@ -407,15 +439,15 @@ test("un envoi démesuré est refusé avant d'être lu, et le type d'un ancien c
   assert.equal(reponse.status, 413);
   await synchroniser({ cours: [{ id: 'c-2', titre: 'T', date: '2026-11-14' }] }, env);
   await synchroniser({ cours: [{ id: 'c-2', titre: 'T', date: '2026-11-14', type: 'sur-mesure', carte: { centre: '  ', branches: [{ titre: ' A ', elements: [' x ', '  '] }, { titre: '   ' }, { titre: 'B' }] } }] }, env);
-  const [c] = (await (await lireSuivi(env)).json()).cours;
-  assert.equal(c.type, 'sur-mesure');
+  assert.equal((await (await lireSuivi(env)).json()).cours[0].type, 'sur-mesure');
+  const c = await lireContenu(env, 'c-2');
   assert.deepEqual(c.carte, { centre: 'Mon cours', branches: [{ titre: 'A', elements: ['x'] }, { titre: 'B', elements: [] }] });
 });
 
 test('une carte ou une fiche démesurée est bornée ou refusée par le serveur', async () => {
   const env = { ...ENV, DB: faireD1() };
   await synchroniser({ cours: [{ id: 'c-1', titre: 'T', date: '2026-11-14', fiche: 'x'.repeat(50000), carte: { centre: 'c', branches: 'pas une liste' } }] }, env);
-  const [c] = (await (await lireSuivi(env)).json()).cours;
+  const c = await lireContenu(env, 'c-1');
   assert.equal(c.fiche.length, 20000);
   assert.equal(c.carte, null);
 });

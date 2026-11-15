@@ -192,6 +192,7 @@ function masteryBadge(pct) {
 
 // Accueil : salutation, carte de niveau, matières en cartes illustrées, puis les actions photo.
 function renderHome() {
+  if (estParent()) return renderParentDashboard(); // parent : tableau de bord de l'enfant (parent.js)
   const points = state.attempts.filter(a => a.correct).length;
   const n = niveauDepuisPoints(points);
 
@@ -253,7 +254,6 @@ function renderHome() {
 
       <div class="home-foot">
         <button id="edit-config" class="link">Modifier la configuration</button>
-        ${estParent() ? '<button id="parent-link" class="link">👪 Espace parent</button>' : ''}
       </div>
     </div>
   `;
@@ -261,22 +261,7 @@ function renderHome() {
   // Branchement des boutons
   document.getElementById('defis-btn').addEventListener('click', renderDefis);
   actualiserBandeauDefis(); // bandeau « défi en attente » et pastille, sans bloquer l'accueil
-  // Notifications : activation (la demande d'autorisation suit directement le toucher) ou « Plus tard »
-  document.getElementById('notifs-activer')?.addEventListener('click', async e => {
-    e.currentTarget.disabled = true;
-    try {
-      await activerNotifications(state.accessCode);
-      renderHome();
-    } catch (err) {
-      document.getElementById('notifs-erreur').textContent = `Impossible : ${err.message}`;
-      e.currentTarget.disabled = false;
-    }
-  });
-  document.getElementById('notifs-plus-tard')?.addEventListener('click', () => {
-    state.notificationsMasquees = true;
-    saveState(state);
-    renderHome();
-  });
+  brancherNotificationsAccueil();
   document.getElementById('info-contenu-ok')?.addEventListener('click', () => {
     state.infoContenuVue = true;
     // Le contenu déjà créé (fiches, cartes, explications) part maintenant, après le message
@@ -291,8 +276,6 @@ function renderHome() {
   document.getElementById('capture-btn').addEventListener('click', renderCaptureLesson);
   document.getElementById('exercise-btn').addEventListener('click', renderExerciseCapture);
   document.getElementById('edit-config').addEventListener('click', renderSetup);
-  const parentLink = document.getElementById('parent-link');
-  if (parentLink) parentLink.addEventListener('click', renderParentDashboard);
   const lessonsBtn = document.getElementById('lessons-btn');
   if (lessonsBtn) lessonsBtn.addEventListener('click', renderLessonsList);
 }
@@ -708,6 +691,27 @@ function renderLessonsList() {
     });
   });
   document.getElementById('back-home').addEventListener('click', renderHome);
+}
+
+// Boutons de la carte « Activer les notifications » (accueil enfant et accueil parent).
+// La demande d'autorisation suit directement le toucher, comme l'exige l'iPhone.
+function brancherNotificationsAccueil() {
+  const bouton = document.getElementById('notifs-activer');
+  bouton?.addEventListener('click', async () => {
+    bouton.disabled = true;
+    try {
+      await activerNotifications(state.accessCode);
+      renderHome();
+    } catch (err) {
+      document.getElementById('notifs-erreur').textContent = `Impossible : ${err.message}`;
+      bouton.disabled = false;
+    }
+  });
+  document.getElementById('notifs-plus-tard')?.addEventListener('click', () => {
+    state.notificationsMasquees = true;
+    saveState(state);
+    renderHome();
+  });
 }
 
 // Message affiché une fois à l'enfant : ses fiches et cartes mentales sont visibles par ses parents.

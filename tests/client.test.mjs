@@ -162,30 +162,26 @@ test('les erreurs du serveur restent lisibles, même sans JSON', async () => {
   assert.deepEqual(JSON.parse(JSON.stringify(await lireReponse(new Response('{"role":"enfant"}')))), { role: 'enfant' });
 });
 
-test('l\'écran parent s\'affiche, échappe les textes et signale la troncature', () => {
+test("les onglets parent échappent les textes, montrent les erreurs et signalent la troncature", () => {
   const piege = '<img src=x onerror=alert(1)>';
-  bacASable.app = { innerHTML: '' };
-  bacASable.document = { getElementById: () => ({ addEventListener() {} }), querySelectorAll: () => [] };
-  bacASable.masteryBadge = pct => `${pct}%`; // masteryBadge et renderHome sont dans app.js, non chargé ici
-  bacASable.renderHome = () => {};
+  bacASable.masteryBadge = pct => `${pct}%`; // masteryBadge est dans app.js, non chargé ici
   const ligne = (id, correct, extra = {}) => ({
     id, quiz_id: 'q1', matiere: 'Maths', theme: 'fractions', notion: 'Simplifier', type: 'qcm',
-    correct, date: '2026-11-10T10:00:00Z', enonce: 'Simplifie 6/8', reponse_donnee: '2/3', bonne_reponse: '3/4', ...extra
+    correct, date: new Date().toISOString(), enonce: 'Simplifie 6/8', reponse_donnee: '2/3', bonne_reponse: '3/4', ...extra
   });
-  appli('afficherSuivi')({
-    profil: { prenom: 'Léa', niveau: '5ème' }, nbCours: 1, tronque: true,
-    cours: [{ matiere: 'SVT', titre: piege, resume: piege, notions: ['noyau', piege], date: '2026-11-12T10:00:00Z' }],
-    tentatives: [ligne('a', 0, { reponse_donnee: piege, notion: piege }), ligne('b', 1), ligne('c', 0, { reponse_donnee: null })]
-  });
-  const page = bacASable.app.innerHTML;
-  assert.ok(page.includes('Suivi de Léa'));
-  assert.ok(!page.includes('<img'), 'le texte piégé ne doit jamais devenir une balise');
-  assert.ok(page.includes('&lt;img'));
-  assert.ok(page.includes('non conservée'));
-  assert.ok(page.includes('dernières réponses'), 'la troncature doit être signalée');
-  assert.match(page, /<b>1<\/b><span>Quiz faits/);
-  assert.ok(page.includes('Ses derniers cours'));
-  assert.ok(page.includes('noyau'));
+  const tentatives = [ligne('a', 0, { reponse_donnee: piege, notion: piege }), ligne('b', 1), ligne('c', 0, { reponse_donnee: null })];
+  const erreurs = appli('erreursHtml')(tentatives);
+  assert.ok(!erreurs.includes('<img src=x'));
+  assert.ok(erreurs.includes('non conservée'));
+  const progression = appli('progressionHtml')(tentatives, true);
+  assert.ok(progression.includes('dernières réponses'), 'la troncature doit être signalée');
+  assert.ok(!progression.includes('<img src=x'));
+  const ensemble = appli('ensembleHtml')({ tentatives, nbCours: 1, cours: [{ id: 'c1', titre: piege, matiere: 'SVT', date: 'd', a_fiche: true }] });
+  assert.match(ensemble, /<b>3<\/b><span>Questions cette semaine/);
+  assert.match(ensemble, /<b>33%<\/b>/);
+  assert.ok(!ensemble.includes('<img src=x'));
+  assert.ok(ensemble.includes('data-vue="fiche"'));
+  assert.ok(appli('ongletsParentHtml')('cours').includes('class="onglet actif" role="tab" aria-selected="true" data-onglet="cours"'));
 });
 
 // ── Vocabulaire ──
@@ -528,12 +524,14 @@ test("une fiche ou une carte créée après coup refait partir le cours, sauf s'
 
 test("l'espace parent montre les boutons du contenu existant et l'affiche échappé", () => {
   const boutons = appli('boutonsContenuCours');
-  assert.equal(boutons({ titre: 'T' }, 0), '');
-  const tous = boutons({ fiche: 'f', carte: {}, explications: [{}] }, 3);
+  assert.equal(boutons({ id: 'c', titre: 'T' }), '');
+  const tous = boutons({ id: 'c', a_fiche: true, a_carte: true, a_explications: true });
   for (const vue of ['fiche', 'carte', 'explications']) assert.ok(tous.includes(`data-vue="${vue}"`), vue);
   const contenu = appli('contenuCoursHtml');
-  assert.ok(!contenu({ fiche: PIEGE }, 'fiche').includes('<img'));
+  assert.ok(!contenu({ fiche: PIEGE }, 'fiche').includes('<img src=x'));
   assert.ok(contenu({ carte: { centre: 'c', branches: [{ titre: 'a', elements: [] }, { titre: 'b', elements: [] }] } }, 'carte').includes('carte-pile'));
+  assert.match(contenu({ carte: 'abîmée' }, 'carte'), /illisible/);
+  assert.equal(appli('activiteSemaine')([{ date: '2020-01-01', correct: true }]).questions, 0, 'hors de la semaine');
 });
 
 test("l'icône de l'écran d'accueil iPhone est déclarée et existe", () => {
@@ -692,11 +690,6 @@ test("un cours modifié pendant son envoi n'est pas marqué partagé : il repart
   assert.equal(cours.version, 2);
 });
 
-test("une carte illisible venue du serveur n'affiche pas de bouton dans l'espace parent", () => {
-  bacASable.app = { innerHTML: '' };
-  appli('afficherSuivi')({ profil: { prenom: 'Léa' }, nbCours: 1, tentatives: [], cours: [{ titre: 'T', date: 'd', carte: 'abîmée' }] });
-  assert.ok(!bacASable.app.innerHTML.includes('data-vue="carte"'));
-});
 
 // ── Notifications ──
 test("sans service worker ni notifications (Safari non installé), rien n'est proposé", () => {
