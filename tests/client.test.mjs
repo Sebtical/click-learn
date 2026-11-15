@@ -768,6 +768,18 @@ test('un défi ne garde que 10 questions jouables, sans figure ni question ouver
   assert.equal(jouable({ type: 'num', enonce: 'e', answer: 'trois' }), false);
 });
 
+test("« Défier mes parents » : un bouton par niveau pour l'enfant, rien pour un parent, sous les quiz du cours", () => {
+  const html = appli('defierParentsHtml')('enfant');
+  for (const niveau of ['decouverte', 'entrainement', 'defi']) assert.ok(html.includes(`data-niveau="${niveau}"`), niveau);
+  assert.equal(appli('defierParentsHtml')('parent1'), '');
+  const fiche = appli('ficheCoursHtml')({ titre: 'T', matiere: 'SVT', resume: 'r', notions: [] }, [], html);
+  assert.ok(fiche.indexOf('id="quiz-error"') < fiche.indexOf('Défier mes parents'), 'la section vient sous les quiz');
+  // Niveau « Défi » d'un chapitre : 10 questions jouables, sans figure
+  const questions = appli('questionsChapitre')('Maths', 'fractions', 'defi');
+  assert.equal(questions.length, 10);
+  assert.ok(questions.every(q => appli('questionDefiJouable')(q)));
+});
+
 test("un cours gardé privé par l'enfant n'est jamais proposé en défi", () => {
   const cours = appli('coursPourDefi')([{ id: 'a', titre: 'Partagé' }, { id: 'b', titre: 'Privé', synchro: 'local' }]);
   assert.deepEqual([...cours.map(c => c.id)], ['a']);

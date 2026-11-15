@@ -464,7 +464,9 @@ function renderLocalSubjectProgram(subject) {
   document.getElementById('back-home').addEventListener('click', renderHome);
 }
 
+// Écran d'un chapitre de Maths/Français : quiz de révision par niveau, et défi aux parents si le chapitre s'y prête.
 function renderLocalChapterQuizSetup(subject, theme) {
+  const defiPossible = state.role === 'enfant' && chapitresPourDefi().some(c => c.matiere === subject && c.theme.id === theme.id);
   app.innerHTML = `
     <div class="card card-wide">
       ${enTete(echapperHtml(theme.titre), `<span class="tag">${echapperHtml(subject)}</span>`, subject)}
@@ -477,6 +479,7 @@ function renderLocalChapterQuizSetup(subject, theme) {
       <div class="actions" id="difficulty-choice">
         ${DIFFICULTIES.map(d => `<button class="difficulty-btn" data-id="${d.id}">${d.label}</button>`).join('')}
       </div>
+      ${defiPossible ? defierParentsHtml(state.role) : ''}
       <button id="back-home" class="secondary">Retour</button>
     </div>
   `;
@@ -484,6 +487,8 @@ function renderLocalChapterQuizSetup(subject, theme) {
   document.querySelectorAll('.difficulty-btn').forEach(btn => {
     btn.addEventListener('click', () => startLocalQuiz(subject, theme.id, btn.dataset.id));
   });
+  // Défi depuis ce chapitre : quiz généré par l'appli (gratuit) au niveau choisi (defis.js)
+  if (defiPossible) brancherDefierParents({ matiere: subject, titre: theme.titre }, niveau => questionsChapitre(subject, theme.id, niveau));
   document.getElementById('cours-btn').addEventListener('click', () => renderLessonContent(subject, theme));
   document.getElementById('back-home').addEventListener('click', () => renderSubjectProgram(subject));
 }
@@ -727,7 +732,9 @@ function infoContenuHtml() {
 
 // Fiche d'un cours enregistré, avec ses boutons (détails, carte mentale, mini-quiz, quiz de révision).
 function renderLessonDetail(lesson) {
-  app.innerHTML = ficheCoursHtml(lesson, DIFFICULTIES);
+  app.innerHTML = ficheCoursHtml(lesson, DIFFICULTIES, defierParentsHtml(state.role));
+  // Défi depuis ce cours : quiz préparé par l'IA au niveau choisi ; un cours privé demande confirmation (defis.js)
+  brancherDefierParents(lesson, niveau => questionsCours(lesson, niveau), lesson.synchro === 'local');
 
   document.getElementById('fiche-btn')?.addEventListener('click', e => onPlusDeDetails(lesson, e.currentTarget));
   document.getElementById('mini-quiz-btn')?.addEventListener('click', () => lancerMiniQuiz(lesson));

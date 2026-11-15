@@ -362,7 +362,8 @@ input[type="file"] {
 
 .ring.vide > span { color: var(--ink-2); }
 
-.difficulty-btn {
+.difficulty-btn,
+.defi-niveau {
   flex: 1;
   min-width: 120px;
 }

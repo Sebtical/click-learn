@@ -178,21 +178,21 @@ function chapitresPourDefi() {
   return chapitresDefiMemo;
 }
 
-// 10 questions d'un chapitre, sans figure (tirées en plusieurs fois si besoin).
-function questionsChapitre(matiere, themeId) {
+// 10 questions d'un chapitre au niveau choisi, sans figure (tirées en plusieurs fois si besoin).
+function questionsChapitre(matiere, themeId, niveau = 'entrainement') {
   let questions = [];
   for (let essai = 0; essai < 5 && questions.length < NB_QUESTIONS_DEFI; essai++) {
-    questions = questions.concat(questionsPourDefi(generateLocalQuiz(matiere, themeId, 'entrainement', NB_QUESTIONS_DEFI)));
+    questions = questions.concat(questionsPourDefi(generateLocalQuiz(matiere, themeId, niveau, NB_QUESTIONS_DEFI)));
   }
   return questions.slice(0, NB_QUESTIONS_DEFI);
 }
 
 // 10 questions préparées par l'IA à partir d'un cours de l'enfant (résumé et notions),
 // au niveau de l'enfant (sur le téléphone d'un parent, state.profile est celui du parent).
-async function questionsCours(cours) {
+async function questionsCours(cours, difficulte = 'entrainement') {
   const niveau = (estParent() && suiviParent?.profil?.niveau) || state.profile.niveau;
   const reponse = await callClaudeJSON(state.accessCode,
-    quizGenerationPrompt(niveau, cours.matiere, 'entrainement', cours),
+    quizGenerationPrompt(niveau, cours.matiere, difficulte, cours),
     { system: SYSTEME_JSON, maxTokens: 5000 });
   return questionsPourDefi(questionsDepuisIA(reponse?.questions));
 }
@@ -200,8 +200,10 @@ async function questionsCours(cours) {
 // Fabrique les questions, envoie le défi au serveur (les autres sont notifiés), puis propose de jouer.
 async function lancerDefi({ matiere, titre }, fabriquerQuestions, bouton) {
   const erreurEl = document.getElementById('defi-erreur');
+  const libelle = bouton.querySelector('small') || bouton; // texte du bouton remplacé pendant la préparation
+  const texteAvant = libelle.textContent;
   document.querySelectorAll('.defi-source').forEach(b => { b.disabled = true; });
-  bouton.querySelector('small').textContent = 'Préparation du défi...';
+  libelle.textContent = 'Préparation du défi...';
   try {
     const questions = await fabriquerQuestions();
     if (questions.length < 3) throw new Error('pas assez de questions, essaie une autre source');
@@ -210,8 +212,33 @@ async function lancerDefi({ matiere, titre }, fabriquerQuestions, bouton) {
     await ouvrirDefi(id);
   } catch (err) {
     erreurEl.textContent = `Impossible de lancer le défi : ${err.message}`;
+    libelle.textContent = texteAvant;
     document.querySelectorAll('.defi-source').forEach(b => { b.disabled = false; });
   }
+}
+
+// ── « Défier mes parents » sous les quiz d'un cours ou d'un chapitre (enfant) ──
+
+// Message affiché avant de lancer un défi depuis un cours gardé privé.
+const AVERTISSEMENT_COURS_PRIVE = "Ce cours est privé : il reste sur ton téléphone. Mais si tu lances ce défi, tes parents verront son titre et les 10 questions. Tu veux continuer ?";
+
+// Section « Défier mes parents » : un bouton par niveau ; rien pour un parent (il lance depuis l'onglet Défis).
+function defierParentsHtml(role) {
+  if (role !== 'enfant') return '';
+  return `<h2>🏆 Défier mes parents</h2>
+      <p class="subtitle">10 questions, les mêmes pour toute la famille. Choisis le niveau !</p>
+      <div class="actions">
+        ${DIFFICULTIES.map(d => `<button class="defi-source defi-niveau secondary" data-niveau="${d.id}" data-label="${echapperHtml(d.label)}">${echapperHtml(d.label)}</button>`).join('')}
+      </div>
+      <p id="defi-erreur" class="error"></p>`;
+}
+
+// Branche les boutons de niveau : fabriquer(niveau) donne les questions ; un cours privé demande d'abord confirmation.
+function brancherDefierParents({ matiere, titre }, fabriquer, prive = false) {
+  document.querySelectorAll('.defi-niveau').forEach(b => b.addEventListener('click', () => {
+    if (prive && !confirm(AVERTISSEMENT_COURS_PRIVE)) return;
+    lancerDefi({ matiere, titre: `${titre} · ${b.dataset.label}` }, () => fabriquer(b.dataset.niveau), b);
+  }));
 }
 
 // Ouvre un défi : le quiz si ce joueur n'a pas encore joué, sinon les résultats.

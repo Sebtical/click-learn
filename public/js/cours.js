@@ -144,8 +144,8 @@ function explicationsHtml(explications) {
 }
 
 // Fiche d'un cours enregistré : en-tête illustré, résumé, notions, détails (ou explications pour un
-// cours sur mesure), puis choix du niveau du quiz de révision.
-function ficheCoursHtml(cours, difficultes) {
+// cours sur mesure), puis choix du niveau du quiz de révision ; « apresQuiz » ajoute une section dessous (défi).
+function ficheCoursHtml(cours, difficultes, apresQuiz = '') {
   const surMesure = cours.type === 'sur-mesure';
   const etiquette = surMesure ? `${echapperHtml(cours.matiere)} · cours sur mesure` : echapperHtml(cours.matiere);
   return `
@@ -165,6 +165,7 @@ function ficheCoursHtml(cours, difficultes) {
         ${difficultes.map(d => `<button class="difficulty-btn" data-id="${d.id}" data-label="${echapperHtml(d.label)}">${echapperHtml(d.label)}</button>`).join('')}
       </div>
       <p id="quiz-error" class="error"></p>
+      ${apresQuiz}
       <button id="back-home" class="secondary">Retour à l'accueil</button>
     </div>
   `;
