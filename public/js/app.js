@@ -320,7 +320,7 @@ async function onGenerateProgramQuiz(subject, difficultyId, difficultyLabel, btn
       subject,
       difficulty: difficultyId,
       createdAt: new Date().toISOString(),
-      questions: questionsDepuisIA(parsed.questions)
+      questions: questionsDepuisIA(parsed.questions, subject)
     };
     state.quizzes.push(quiz);
     saveState(state);
@@ -430,7 +430,7 @@ async function onGenerateChapterQuiz(subject, chapter, difficultyId, difficultyL
       subject,
       difficulty: difficultyId,
       createdAt: new Date().toISOString(),
-      questions: questionsDepuisIA(parsed.questions)
+      questions: questionsDepuisIA(parsed.questions, subject)
     };
     state.quizzes.push(quiz);
     saveState(state);
@@ -863,7 +863,7 @@ async function onGenerateQuiz(lesson, difficultyId, difficultyLabel, btn) {
       subject: lesson.matiere,
       difficulty: difficultyId,
       createdAt: new Date().toISOString(),
-      questions: questionsDepuisIA(parsed.questions)
+      questions: questionsDepuisIA(parsed.questions, lesson.matiere)
     };
     state.quizzes.push(quiz);
     saveState(state);

@@ -90,7 +90,7 @@ function quizDuCoursSurMesure(cours) {
     subject: cours.matiere,
     difficulty: 'sur-mesure',
     createdAt: new Date().toISOString(),
-    questions: questionsDepuisIA(cours.questions)
+    questions: questionsDepuisIA(cours.questions, cours.matiere)
   };
 }
 

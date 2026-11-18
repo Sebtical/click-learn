@@ -562,7 +562,48 @@ test('une fraction incohérente renvoyée par l\'IA est écartée du mini-quiz',
 
 test("les consignes de l'IA imposent le type fraction pour une réponse en fraction", () => {
   assert.ok(appli('coursSurMesurePrompt')('5ème', 'Maths', []).includes('"type": "fraction"'));
-  assert.ok(appli('questionSetInstructions')().includes('jamais "num"'));
+  assert.ok(appli('questionSetInstructions')('Physique-Chimie').includes('jamais "num"'));
+});
+
+// ── Matières sans calcul (Histoire-Géo, Anglais, Français par IA) ──
+// Bug du 18/11/2026 : un quiz d'Histoire-Géo contenait un tiers de calculs et de fractions hors sujet,
+// parce que les consignes communes donnaient des exemples de maths à toutes les matières.
+test('seules les matières scientifiques sont des matières à calcul', () => {
+  const estMatiereCalcul = appli('estMatiereCalcul');
+  for (const m of ['Maths', 'Physique-Chimie', 'SVT', 'Technologie']) assert.ok(estMatiereCalcul(m), m);
+  for (const m of ['Histoire-Géographie', 'Anglais', 'Français', undefined]) assert.ok(!estMatiereCalcul(m), m);
+});
+
+test("les consignes d'Histoire-Géo n'incitent plus aux calculs ni aux fractions", () => {
+  const consignes = appli('questionSetInstructions')('Histoire-Géographie');
+  assert.ok(!consignes.includes('"type": "fraction"'));
+  assert.ok(!/fractions?\s*:/.test(consignes), 'aucun exemple de notion de maths');
+  assert.ok(consignes.includes('contenu du cours'));
+  assert.ok(consignes.includes(`au plus ${appli('maxCalculs')(15)}`));
+  const surMesure = appli('coursSurMesurePrompt')('5ème', 'Histoire-Géographie', []);
+  assert.ok(!surMesure.includes('"type": "fraction"'));
+});
+
+test('au plus 2 calculs sur 15 (1 sur 5) gardés pour une matière sans calcul', () => {
+  assert.equal(appli('maxCalculs')(15), 2);
+  assert.equal(appli('maxCalculs')(10), 2);
+  assert.equal(appli('maxCalculs')(5), 1);
+  const liste = [
+    { type: 'num', enonce: 'n1', answer: 1 }, { type: 'qcm', enonce: 'q1', choix: ['a', 'b'], correctIndex: 0 },
+    { type: 'fraction', enonce: 'f1', numerateur: 1, denominateur: 4 }, { type: 'num', enonce: 'n2', answer: 2 },
+    { type: 'ouverte', enonce: 'o1' }, { type: 'fraction', enonce: 'f2', numerateur: 3, denominateur: 5 }
+  ];
+  const histoire = appli('questionsDepuisIA')(liste, 'Histoire-Géographie');
+  assert.deepEqual(Array.from(histoire, q => q.enonce), ['n1', 'q1', 'o1']); // 6 questions → 1 seul calcul gardé, le premier
+  const physique = appli('questionsDepuisIA')(liste, 'Physique-Chimie');
+  assert.equal(physique.length, 6);
+});
+
+test("le quiz d'un cours s'appuie sur sa fiche détaillée quand elle existe", () => {
+  const cours = { titre: 'La population mondiale', resume: 'Résumé', notions: ['exode rural'], fiche: '## Natalité\n- naissances pour 1 000 habitants' };
+  assert.ok(appli('quizGenerationPrompt')('5ème', 'Histoire-Géographie', 'entrainement', cours).includes('naissances pour 1 000 habitants'));
+  const sansFiche = appli('quizGenerationPrompt')('5ème', 'Histoire-Géographie', 'entrainement', { ...cours, fiche: undefined });
+  assert.ok(!sansFiche.includes('Fiche détaillée du cours'));
 });
 
 // ── Cartes mentales ──

@@ -118,8 +118,22 @@ function questionDepuisIA(q) {
 
 // Prépare toutes les questions d'un quiz de l'IA ; une question « fraction » mal formée est écartée
 // (sinon elle deviendrait une question ouverte corrigée sans réponse de référence).
-function questionsDepuisIA(liste) {
-  return (Array.isArray(liste) ? liste : []).map(questionDepuisIA).filter(Boolean);
+// Matière sans calcul (voir estMatiereCalcul) : l'appli garde au plus maxCalculs questions numériques
+// ou en fraction (les premières), même si l'IA n'a pas respecté la consigne. Le quiz peut alors être plus court.
+function questionsDepuisIA(liste, matiere) {
+  const brutes = Array.isArray(liste) ? liste : [];
+  const questions = brutes.map(questionDepuisIA).filter(Boolean);
+  if (!matiere || estMatiereCalcul(matiere)) return questions;
+  const plafond = maxCalculs(brutes.length);
+  const gardees = [];
+  let calculsGardes = 0;
+  for (const q of questions) {
+    const estCalcul = q.type === 'num' || Boolean(q.fraction);
+    if (estCalcul && calculsGardes >= plafond) continue; // calcul en trop : écarté
+    if (estCalcul) calculsGardes++;
+    gardees.push(q);
+  }
+  return gardees;
 }
 
 // ── Fabriques de questions ──

@@ -187,14 +187,14 @@ function questionsChapitre(matiere, themeId, niveau = 'entrainement') {
   return questions.slice(0, NB_QUESTIONS_DEFI);
 }
 
-// 10 questions préparées par l'IA à partir d'un cours de l'enfant (résumé et notions),
+// 10 questions préparées par l'IA à partir d'un cours de l'enfant (résumé, notions, et fiche si elle est sur ce téléphone),
 // au niveau de l'enfant (sur le téléphone d'un parent, state.profile est celui du parent).
 async function questionsCours(cours, difficulte = 'entrainement') {
   const niveau = (estParent() && suiviParent?.profil?.niveau) || state.profile.niveau;
   const reponse = await callClaudeJSON(state.accessCode,
     quizGenerationPrompt(niveau, cours.matiere, difficulte, cours),
     { system: SYSTEME_JSON, maxTokens: 5000 });
-  return questionsPourDefi(questionsDepuisIA(reponse?.questions));
+  return questionsPourDefi(questionsDepuisIA(reponse?.questions, cours.matiere));
 }
 
 // Fabrique les questions, envoie le défi au serveur (les autres sont notifiés), puis propose de jouer.

@@ -31,6 +31,9 @@ function calibrationNote(niveau) {
 // raison et se voir répondre "faux") : on demande explicitement une relecture avant de finaliser.
 const ACCURACY_NOTE = 'Avant de finaliser, pour chaque question recalcule le résultat attendu pas à pas (étape par étape, sans sauter d\'étape mentalement) et vérifie que "answer" (ou "correctIndex") correspond exactement à ce résultat recalculé. Une bonne réponse de l\'élève marquée "fausse" à cause d\'une erreur de calcul de ta part est pire qu\'une question trop facile.';
 
+// Équivalent d'ACCURACY_NOTE pour une matière sans calcul : sans l'inciter à recalculer quoi que ce soit.
+const VERIFICATION_NOTE = 'Avant de finaliser, vérifie pour chaque question que la bonne réponse indiquée est exacte et conforme au cours, et qu\'un seul choix de QCM est juste. Une bonne réponse de l\'élève marquée "fausse" à cause d\'une erreur de ta part est pire qu\'une question trop facile.';
+
 // Même logique côté correction : si l'élève a raison, il ne doit jamais être marqué "faux"
 // parce que l'IA a refait le calcul de travers en jugeant sa réponse.
 const GRADING_ACCURACY_NOTE = 'Si la question implique un calcul ou un raisonnement, refais-le toi-même pas à pas avant de juger — ne te fie pas à une impression, une réponse juste de l\'élève ne doit jamais être marquée incorrecte par erreur de calcul de ta part.';
@@ -38,20 +41,50 @@ const GRADING_ACCURACY_NOTE = 'Si la question implique un calcul ou un raisonnem
 // La répétition d'exercices est ce qui fait progresser : des sets plus longs qu'un simple mini-quiz.
 const QUIZ_LENGTH = 15;
 
+// ── Matières avec ou sans calcul ──
+
+// Matières où les exercices de calcul font partie du cours. Pour les autres (Histoire-Géo, Anglais,
+// Français par IA), les exemples de maths des consignes poussaient l'IA à poser des calculs hors sujet.
+const MATIERES_CALCUL = ['Maths', 'Physique-Chimie', 'SVT', 'Technologie'];
+
+// Vrai si la matière admet des questions de calcul sans limite.
+function estMatiereCalcul(matiere) {
+  return MATIERES_CALCUL.includes(matiere);
+}
+
+// Nombre maximal de questions de calcul dans un quiz de n questions d'une matière sans calcul :
+// une nette minorité (2 sur 15, 1 sur 5), et seulement si le calcul figure dans le cours.
+function maxCalculs(n) {
+  return Math.max(1, Math.round(n * 0.15));
+}
+
+// Consigne sur les types de questions d'une matière sans calcul (n = nombre de questions demandées).
+function consigneSansCalcul(n) {
+  return `Toutes les questions portent sur le contenu du cours (connaissances, définitions, vocabulaire, dates, repères, exemples, raisonnement propre à la matière) : ce n'est pas un cours de mathématiques, ne pose jamais d'exercice de calcul, de fraction ou de pourcentage qui ne figure pas dans le cours. Seule exception : si le cours contient lui-même un calcul (par exemple naissances moins décès), tu peux poser au plus ${maxCalculs(n)} question(s) numérique(s) sur ce calcul-là, pas davantage. Si une réponse attendue est une fraction, pose un QCM.`;
+}
+
 // Bloc commun aux deux prompts qui génèrent un jeu de questions (quizGenerationPrompt et
-// programQuizPrompt) : mélange de types, rappel anti-erreur, et format JSON attendu.
-function questionSetInstructions() {
-  return `Mélange des questions à choix multiples (QCM, 4 choix), des questions à réponse numérique quand c'est adapté (calcul, mesure...), et des questions ouvertes courtes pour le reste. Varie les questions même sur une même notion (angles d'attaque différents, exemples différents) pour un vrai entraînement par répétition, sans répéter deux fois la même question. Pour chaque question, précise la notion exacte testée (ex : "fractions : addition de fractions").
+// programQuizPrompt) : types de questions selon la matière, rappel anti-erreur, et format JSON attendu.
+function questionSetInstructions(matiere) {
+  const calcul = estMatiereCalcul(matiere);
+  const types = calcul
+    ? `Mélange des questions à choix multiples (QCM, 4 choix), des questions à réponse numérique quand c'est adapté (calcul, mesure...), et des questions ouvertes courtes pour le reste.`
+    : `Mélange des questions à choix multiples (QCM, 4 choix) et des questions ouvertes courtes. ${consigneSansCalcul(QUIZ_LENGTH)}`;
+  const exempleNotion = calcul ? 'fractions : addition de fractions' : 'exode rural : définition';
+  const exemplesFormat = calcul
+    ? `  {"type": "num", "notion": "...", "enonce": "...", "answer": 0, "unit": "", "pisteReflexion": "..."},
+  {"type": "fraction", "notion": "...", "enonce": "...", "numerateur": 3, "denominateur": 4, "pisteReflexion": "..."},`
+    : `  {"type": "num", "notion": "...", "enonce": "...", "answer": 0, "unit": "", "pisteReflexion": "..."},`;
+  return `${types} Varie les questions même sur une même notion (angles d'attaque différents, exemples différents) pour un vrai entraînement par répétition, sans répéter deux fois la même question. Pour chaque question, précise la notion exacte testée (ex : "${exempleNotion}").
 Pour les QCM : donne l'index (0 à 3) de la bonne réponse, et une piste de réflexion à afficher si l'élève se trompe. Cette piste ne doit JAMAIS révéler la réponse : elle doit rappeler une règle, poser une question, ou suggérer une méthode pour que l'élève trouve seul(e).
-${ACCURACY_NOTE}
+${calcul ? ACCURACY_NOTE : VERIFICATION_NOTE}
 Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown, au format :
 {"questions": [
   {"type": "qcm", "notion": "...", "enonce": "...", "choix": ["...", "...", "...", "..."], "correctIndex": 0, "pisteReflexion": "..."},
-  {"type": "num", "notion": "...", "enonce": "...", "answer": 0, "unit": "", "pisteReflexion": "..."},
-  {"type": "fraction", "notion": "...", "enonce": "...", "numerateur": 3, "denominateur": 4, "pisteReflexion": "..."},
+${exemplesFormat}
   {"type": "ouverte", "notion": "...", "enonce": "..."}
 ]}
-${REGLE_FRACTIONS}
+${calcul ? REGLE_FRACTIONS : ''}
 (le tableau "questions" doit contenir exactement ${QUIZ_LENGTH} éléments, ni plus ni moins)`;
 }
 
@@ -128,31 +161,39 @@ Crée un petit cours sur mesure pour l'aider à comprendre ses erreurs :
 - puis exactement ${NB_QUESTIONS_SUR_MESURE} nouvelles questions sur ces mêmes notions pour vérifier qu'il/elle a compris, de difficulté égale ou un peu plus simple que le quiz.
 La « bonne réponse » indiquée ci-dessus est sûre : appuie-toi dessus et ne la contredis jamais.
 ${calibrationNote(niveau)}
-${ACCURACY_NOTE}
-Les questions sont uniquement des QCM (4 choix), des questions à réponse numérique ou des questions dont la réponse est une fraction ; la piste de réflexion ne révèle jamais la réponse.
-${REGLE_FRACTIONS}
+${estMatiereCalcul(matiere) ? ACCURACY_NOTE : VERIFICATION_NOTE}
+${estMatiereCalcul(matiere)
+    ? `Les questions sont uniquement des QCM (4 choix), des questions à réponse numérique ou des questions dont la réponse est une fraction ; la piste de réflexion ne révèle jamais la réponse.
+${REGLE_FRACTIONS}`
+    : `Les questions sont des QCM (4 choix), sauf l'exception indiquée ci-après ; la piste de réflexion ne révèle jamais la réponse. ${consigneSansCalcul(NB_QUESTIONS_SUR_MESURE)}`}
 Réponds UNIQUEMENT avec un JSON valide, sans texte autour, sans balises markdown, au format :
 {"titre": "titre court du cours", "resume": "ce que ce cours fait retravailler, en 1 à 2 phrases", "notions": ["..."],
  "explications": [{"notion": "...", "erreur": "...", "methode": "...", "exemple": "..."}],
  "questions": [
   {"type": "qcm", "notion": "...", "enonce": "...", "choix": ["...", "...", "...", "..."], "correctIndex": 0, "pisteReflexion": "..."},
-  {"type": "num", "notion": "...", "enonce": "...", "answer": 0, "unit": "", "pisteReflexion": "..."},
-  {"type": "fraction", "notion": "...", "enonce": "...", "numerateur": 3, "denominateur": 4, "pisteReflexion": "..."}
+  {"type": "num", "notion": "...", "enonce": "...", "answer": 0, "unit": "", "pisteReflexion": "..."}${estMatiereCalcul(matiere) ? `,
+  {"type": "fraction", "notion": "...", "enonce": "...", "numerateur": 3, "denominateur": 4, "pisteReflexion": "..."}` : ''}
  ]}`;
 }
 
-// Consigne de génération d'un quiz de révision à partir d'un cours enregistré.
+// Consigne de génération d'un quiz de révision à partir d'un cours enregistré (ou d'un chapitre du programme).
+// La fiche détaillée, quand elle existe, est la source la plus riche : sans elle, l'IA n'avait que
+// quelques phrases de résumé pour écrire QUIZ_LENGTH questions et comblait avec des questions hors sujet.
 function quizGenerationPrompt(niveau, subject, difficultyId, lesson) {
   const { label, guidance } = difficultyById(difficultyId);
+  const fiche = lesson.fiche ? `
+Fiche détaillée du cours (source principale des questions) :
+${lesson.fiche}
+` : '';
   return `Tu es un tuteur pédagogique bienveillant pour un(e) élève de ${niveau} (collège, France), en ${subject}.
 Voici le contenu d'un cours :
 Titre : ${lesson.titre}
 Résumé : ${lesson.resume}
-Notions : ${lesson.notions.join(', ')}
-
+Notions : ${(lesson.notions || []).join(', ')}
+${fiche}
 Génère un parcours de révision de ${QUIZ_LENGTH} questions, niveau de difficulté "${label}" : ${guidance}
 ${calibrationNote(niveau)}
-${questionSetInstructions()}`;
+${questionSetInstructions(subject)}`;
 }
 
 // Consigne de correction d'une réponse ouverte de l'élève.
@@ -180,7 +221,7 @@ Nous sommes le ${dateStr}.
 
 Génère un parcours de révision de ${QUIZ_LENGTH} questions basé sur le programme officiel de l'Éducation nationale française pour ce niveau et cette matière, en te calant sur les notions généralement abordées à cette période de l'année scolaire (l'année scolaire va de septembre à juillet). Niveau de difficulté "${label}" : ${guidance}
 ${calibrationNote(niveau)}
-${questionSetInstructions()}`;
+${questionSetInstructions(subject)}`;
 }
 
 // Liste des chapitres du programme officiel pour une matière, à un niveau donné, adaptée à la période de l'année.
